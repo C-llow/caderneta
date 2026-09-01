@@ -1,6 +1,6 @@
 <title>Caderneta de Campo</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#12160D">
+<meta name="theme-color" content="#1E7B3C">
 <meta name="description" content="Ensaios agronômicos: protocolo, croqui, avaliações, fotos por tratamento e análise estatística. Funciona sem internet.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icone-192.png" sizes="192x192">
@@ -1183,6 +1183,10 @@ function classeCV(cv){
 /* IndexedDB, e não a página: aqui o caderno mora no aparelho. Gravar é local e
    instantâneo — não recarrega a tela, não depende de sinal, e o teto deixa de
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
+/* Versão do programa, à vista na tela de sincronização. Serve para saber se os
+   três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
+const VERSAO_APP = "2026-08-31 · 1";
+
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
 function abrirBD(){
@@ -1656,6 +1660,14 @@ function telaSync(){
     + (syncConfig() ? '<button class="b b-perigo b-ghost" data-acao="sync-sair" style="margin-right:auto">Desconectar</button>' : '')
     + '<button class="b b-p" data-acao="sync-entrar">'+(ligado?"Entrar de novo":"Entrar")+'</button>'
     + '</div></div></div>';
+
+  s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Versão do app</div>'
+    + '<h2>'+esc(VERSAO_APP)+'</h2></div>'
+    + '<button class="b b-s" data-acao="buscar-atualizacao">Buscar atualização</button></div>'
+    + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
+    + 'Confira se os três aparelhos mostram a mesma versão. O app se atualiza sozinho '
+    + 'ao abrir com internet; este botão força a busca agora. '
+    + '<b>Seus dados não são afetados</b> — eles ficam no aparelho, não no programa.</p></div>';
 
   s += '<div class="sec"><div class="eyebrow">Como funciona</div>'
     + '<h2>O que acontece sem sinal</h2>'
@@ -3358,6 +3370,18 @@ document.addEventListener("click", async ev=>{
   if(a==="home"){ TELA={nome:"home",expId:null,aba:"protocolo",avId:null}; render(); }
   else if(a==="tela-sync"){ TELA={nome:"sync"}; render(); }
   else if(a==="sincronizar"){ sincronizar(false); }
+  /* Grava o que estiver pendente antes de recarregar: a atualização troca o
+     programa, e não pode levar junto o que ainda não foi para o disco. */
+  else if(a==="buscar-atualizacao"){
+    if(!navigator.onLine){ toast("Precisa de internet para buscar"); return; }
+    if(PERSIST.pend) await salvar();
+    toast("Procurando versão nova…");
+    try{
+      const reg = await navigator.serviceWorker.getRegistration();
+      if(reg) await reg.update();
+    }catch(err){}
+    location.reload();
+  }
   else if(a==="instalar"){
     if(!CONVITE_INSTALAR){ toast("Use o menu do navegador: Instalar app"); return; }
     CONVITE_INSTALAR.prompt();

@@ -10,7 +10,8 @@ const ARQUIVOS = [
   ".",
   "index.html",
   "manifest.webmanifest",
-  "icone-192.png"
+  "icone-192.png",
+  "icone-512.png"
 ];
 
 self.addEventListener("install", ev=>{
@@ -45,7 +46,10 @@ self.addEventListener("fetch", ev=>{
      abrir no meio da lavoura. */
   if(req.mode === "navigate"){
     ev.respondWith(
-      fetch(req)
+      /* `no-cache` obriga a perguntar ao servidor se mudou. Sem isso o cache HTTP
+         do navegador pode devolver a versão velha sem nem consultar o GitHub, e
+         uma atualização recém-publicada demoraria a aparecer. */
+      fetch(req, {cache:"no-cache"})
         .then(r=>{
           const copia = r.clone();
           caches.open(VERSAO).then(c=>c.put("index.html", copia)).catch(()=>{});
