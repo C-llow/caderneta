@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-01 · 4";
+const VERSAO_APP = "2026-09-01 · 5";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1246,14 +1246,21 @@ function fotosQueAindaCabem(){
   const n = Math.floor(livre/(BYTES_THUMB+BYTES_LEITURA));
   return {ampliadas:n, miniaturas:0, total:n};
 }
+/* Só conta como liberável a foto que já está no servidor. Descartar a ampliada
+   de uma foto ainda não enviada apagaria a única cópia que existe no mundo —
+   antes do Storage isso era inevitável; agora seria um erro. */
 function bytesLiberaveis(){
   let b = 0;
-  ST.experimentos.forEach(e=>e.fotos.forEach(f=>{ if(f.media) b += Math.round(f.media.length*3/4); }));
+  ST.experimentos.forEach(e=>e.fotos.forEach(f=>{
+    if(f.media && f.remota) b += Math.round(f.media.length*3/4);
+  }));
   return b;
 }
 function liberarEspaco(){
   let n = 0;
-  ST.experimentos.forEach(e=>e.fotos.forEach(f=>{ if(f.media){ delete f.media; n++; } }));
+  ST.experimentos.forEach(e=>e.fotos.forEach(f=>{
+    if(f.media && f.remota){ delete f.media; n++; }
+  }));
   if(n) marcarSujo();
   return n;
 }
@@ -1309,6 +1316,13 @@ async function supa(caminho, opc){
   const r = await fetch(c.url.replace(/\/+$/,"")+caminho,
     Object.assign({}, opc, {headers: Object.assign(cab, (opc||{}).headers||{})}));
   if(!r.ok){
+    /* 401 costuma ser só o token vencido — o relógio do aparelho atrasado já
+       basta para a checagem preventiva errar. Renova uma vez e repete, em vez
+       de mandar o técnico refazer o login no meio da lavoura. Uma tentativa só:
+       se a renovação não resolveu, o problema é outro. */
+    if(r.status === 401 && !(opc||{}).__retentado && await syncRenovar()){
+      return supa(caminho, Object.assign({}, opc, {__retentado:true}));
+    }
     const txt = await r.text().catch(()=>"");
     const e = new Error(txt || ("HTTP "+r.status)); e.status = r.status; throw e;
   }
@@ -1356,6 +1370,39 @@ async function supaSubirFoto(expId, fotoId, tipo, dataUrl){
   }
   return true;
 }
+async function supaApagarFoto(expId, fotoId, tipo){
+  const c = syncConfig(); if(!c) throw new Error("sem configuração");
+  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
+    method:"DELETE",
+    headers:{apikey:c.chave, Authorization:"Bearer "+c.token}
+  });
+  // 404 = já não está lá. O objetivo era esse.
+  if(!r.ok && r.status !== 404) throw new Error("HTTP "+r.status);
+  return true;
+}
+/* Apagar a foto no aparelho não apaga o arquivo no servidor — e sem isto ele
+   ficaria ocupando o balde para sempre. A ordem vai para uma fila, porque quem
+   apaga uma foto costuma estar no campo, sem sinal. */
+function enfileirarExclusaoFoto(expId, fotoId){
+  if(!Array.isArray(ST.fotosParaApagar)) ST.fotosParaApagar = [];
+  ST.fotosParaApagar.push({exp:expId, foto:fotoId});
+}
+async function limparFotosApagadas(){
+  const fila = Array.isArray(ST.fotosParaApagar) ? ST.fotosParaApagar : [];
+  if(!fila.length) return 0;
+  const sobraram = [];
+  let n = 0;
+  for(const item of fila){
+    try{
+      await supaApagarFoto(item.exp, item.foto, "t");
+      await supaApagarFoto(item.exp, item.foto, "");
+      n++;
+    }catch(err){ sobraram.push(item); }   // tenta de novo no próximo sync
+  }
+  ST.fotosParaApagar = sobraram;
+  return n;
+}
+
 async function supaBaixarFoto(expId, fotoId, tipo){
   const c = syncConfig(); if(!c) return null;
   const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
@@ -1511,9 +1558,15 @@ async function sincronizar(silencioso){
     });
 
     // 2. o que é local e está mais novo sobe
+    /* Também entra o ensaio que tem foto ainda não enviada, mesmo com o carimbo
+       igual ao do servidor. Sem esta segunda condição, uma foto cuja subida
+       falhou (sinal caiu no meio) nunca mais seria tentada: o carimbo já estaria
+       em dia, o ensaio sairia desta lista, e a imagem ficaria presa no aparelho
+       para sempre — visível só para quem a tirou. */
+    const temFotoPendente = e => (e.fotos||[]).some(f=>!f.remota && (f.media || f.thumb));
     const subir = ST.experimentos.filter(e=>{
       const r = porId[e.id];
-      return !r || (e.atualizado||"") > (r.atualizado||"");
+      return !r || (e.atualizado||"") > (r.atualizado||"") || temFotoPendente(e);
     });
     if(subir.length){
       /* As fotos vão primeiro, e por fora do documento. Só depois de a imagem
@@ -1556,6 +1609,9 @@ async function sincronizar(silencioso){
       });
       ST.atualizadoGerais = agora;
     }
+
+    // 4. arquivos de fotos já excluídas saem do balde
+    await limparFotosApagadas();
 
     migrar();
     SYNC.quando = new Date(); SYNC.erro = null;
@@ -3911,6 +3967,8 @@ document.addEventListener("click", async ev=>{
   }
   else if(a==="del-foto"){
     if(!await confirmar("Excluir esta foto?")) return;
+    const morta = e.fotos.find(f=>f.id===id);
+    if(morta && morta.remota) enfileirarExclusaoFoto(e.id, morta.id);
     e.fotos = e.fotos.filter(f=>f.id!==id);
     const lb=el.closest(".lightbox"); if(lb) lb.remove();
     marcarSujo(); render();
