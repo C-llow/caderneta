@@ -1,8 +1,0 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "io.github.c_llow.caderneta",
-        "sha256_cert_fingerprints": ["C8:94:C8:D0:D6:9F:1B:C4:72:7A:B4:B5:3A:B7:34:18:40:73:F0:F2:8B:DF:2A:43:39:A6:3E:CC:96:72:3D:0C"]
-      }
-    }]
