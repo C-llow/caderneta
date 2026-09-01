@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-01 · 3";
+const VERSAO_APP = "2026-09-01 · 4";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -2773,20 +2773,21 @@ function telaQuadro(e, q){
       + '<span class="pill'+(b.fotos.length>=FOTOS_POR_TRAT ? ' pill-w'
           : b.fotos.length ? ' pill-a' : '')+'" style="margin-left:auto;flex:none">'
       + b.fotos.length+'/'+FOTOS_POR_TRAT+'</span></div>'
+      /* Câmera primeiro: no campo é o gesto de sempre, e fica sob o polegar. */
       + (so ? '' :
-          '<button class="b b-s" data-acao="galeria-trat" data-id="'+b.id+'" '
-          + 'style="flex:none" aria-label="Escolher da galeria"'
-          + (b.fotos.length>=FOTOS_POR_TRAT?' disabled':'')+'>&#128444;</button>'
-          + '<button class="b b-s b-p" data-acao="foto-trat" data-id="'+b.id+'" '
+          '<button class="b b-s b-p" data-acao="foto-trat" data-id="'+b.id+'" '
           + 'style="flex:none" aria-label="Tirar foto"'
-          + (b.fotos.length>=FOTOS_POR_TRAT?' disabled':'')+'>&#128247;</button>')
+          + (b.fotos.length>=FOTOS_POR_TRAT?' disabled':'')+'>&#128247;</button>'
+          + '<button class="b b-s" data-acao="galeria-trat" data-id="'+b.id+'" '
+          + 'style="flex:none" aria-label="Escolher da galeria"'
+          + (b.fotos.length>=FOTOS_POR_TRAT?' disabled':'')+'>&#128444;</button>')
       + '</div>';
     if(aberto){
       s += b.fotos.length
         ? '<div class="foto-grade" style="margin-top:12px">'
           + b.fotos.map(f=>cartaoFoto(e, f, so)).join("") + '</div>'
         : '<p style="font-size:.8rem;color:var(--muted);margin-top:10px">Nenhuma foto aqui ainda'
-          + (so?'.':' — &#128247; abre a câmera, &#128444; busca na galeria do celular.')+'</p>';
+          + (so?'.':' — &#128247; tira a foto, &#128444; busca na galeria do celular.')+'</p>';
       if(b.fotos.length >= FOTOS_POR_TRAT && !so){
         s += '<p style="font-size:.78rem;color:var(--alerta);margin-top:8px">'
           + 'Limite de '+FOTOS_POR_TRAT+' fotos atingido aqui. Apague alguma, ou abra '
@@ -3972,7 +3973,21 @@ document.addEventListener("change", ev=>{
     const e = exp(); if(!e) return;
     const t = e.tratamentos.find(x=>x.id===el.dataset.id);
     const p = t && (t.produtos||[]).find(x=>x.id===el.dataset.prod);
-    if(p){ p.unidade = el.value; marcarSujo(); }
+    if(!p) return;
+    const todos = e.tratamentos.reduce((a,x)=>a.concat(x.produtos||[]), []);
+    /* Um ensaio quase sempre corre inteiro na mesma unidade. Na PRIMEIRA que
+       você escolher, ela se repete nos demais produtos e poupa a digitação.
+       Depois disso, mexer numa muda só aquela: se outra já tem unidade, quem
+       escolheu foi você, e sobrescrever seria apagar decisão sua. */
+    const primeira = el.value && todos.every(x => x === p || !x.unidade);
+    p.unidade = el.value;
+    let repetidas = 0;
+    if(primeira) todos.forEach(x=>{ if(x !== p && !x.unidade){ x.unidade = el.value; repetidas++; } });
+    marcarSujo();
+    if(repetidas){
+      render();
+      toast(el.value+" aplicada aos "+(repetidas+1)+" produtos — dá para mudar qualquer uma");
+    }
     return;
   }
   if(el.dataset.acao==="set-nivel"){
@@ -4092,11 +4107,20 @@ document.addEventListener("keydown", ev=>{
 
 // captura de foto
 const entrada = document.createElement("input");
-/* Sem `capture`: com ele, o Android abre a câmera em modo "entrega o arquivo e
-   esquece" e a foto NÃO fica na galeria. Sem ele, o celular pergunta a origem e
-   quem fotografa é o app de câmera de verdade — que grava no telefone como
-   qualquer outra foto. Custa um toque a mais e resolve o pedido. */
+/* `capture` abre a câmera direto, sem passar por seletor.
+   Já esteve fora daqui: no Chrome, sem `capture` o Android pergunta a origem e
+   quem fotografa é o app de câmera de verdade, que grava a foto no telefone.
+   Só que dentro do APK (WebView) essa pergunta não existe — o sistema vai
+   direto ao seletor de arquivos, e o botão da câmera acabava abrindo a galeria.
+   Entre "abre a câmera" e "grava na galeria sozinho", o primeiro é o que serve
+   no campo; para o segundo há o botão "Salvar no celular" em cada foto, que
+   ainda por cima salva com a etiqueta impressa. */
 entrada.type="file"; entrada.accept="image/*";
+/* setAttribute, e não `entrada.capture = ...`: a propriedade só existe onde o
+   navegador implementa a captura de mídia, então no desktop a atribuição é
+   engolida em silêncio e o atributo nunca chega ao HTML — que é justamente o
+   que o Android lê. */
+entrada.setAttribute("capture", "environment");
 entrada.id="entrada-foto"; entrada.className="sr";
 document.body.appendChild(entrada);
 /* A câmera pode ser cancelada sem produzir arquivo — aí nenhum "change" chega.
