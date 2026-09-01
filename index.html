@@ -246,6 +246,11 @@ table.protocolo-tab tbody tr:last-child td{border-bottom:0}
   width:100%; aspect-ratio:4/3;
 }
 .foto-face img{width:100%; height:100%; object-fit:cover; display:block}
+/* O lugar da foto que ainda está no servidor: ocupa o mesmo espaço da imagem,
+   para a grade não pular quando ela chegar. */
+.foto-nuvem{display:flex; align-items:center; justify-content:center;
+  width:100%; height:100%; background:var(--surface-3); color:var(--muted);
+  font-size:1.1rem; letter-spacing:.05em}
 .foto-face:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 /* A etiqueta usa a mesma fonte na tela e na imagem exportada, para o que se vê
    aqui ser o que sai no arquivo. */
@@ -1186,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-01 · 2";
+const VERSAO_APP = "2026-09-01 · 3";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1309,6 +1314,110 @@ async function supa(caminho, opc){
   }
   return r.status === 204 ? null : r.json();
 }
+
+/* ---- Fotos no Storage ----
+   A foto NÃO viaja dentro do ensaio. Se viajasse, cada aparelho baixaria o
+   acervo inteiro a cada sincronização — inclusive os de quem nunca abre foto.
+   Aqui ela sobe uma vez para o balde `fotos` e só desce quando alguém olha.
+   O aparelho que tirou continua com ela inteira, offline, como sempre. */
+const BALDE = "fotos";
+function caminhoFoto(expId, fotoId, tipo){
+  return "/storage/v1/object/"+BALDE+"/"+expId+"/"+fotoId+(tipo==="t"?"-t":"")+".jpg";
+}
+function dataUrlParaBlob(u){
+  const [cab, b64] = String(u).split(",");
+  const tipo = (cab.match(/:(.*?);/)||[])[1] || "image/jpeg";
+  const bin = atob(b64);
+  const n = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) n[i] = bin.charCodeAt(i);
+  return new Blob([n], {type:tipo});
+}
+function blobParaDataUrl(b){
+  return new Promise((ok,no)=>{
+    const l = new FileReader();
+    l.onload = ()=>ok(l.result); l.onerror = ()=>no(l.error);
+    l.readAsDataURL(b);
+  });
+}
+async function supaSubirFoto(expId, fotoId, tipo, dataUrl){
+  const c = syncConfig(); if(!c) throw new Error("sem configuração");
+  const b = dataUrlParaBlob(dataUrl);
+  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
+    method:"POST",
+    headers:{apikey:c.chave, Authorization:"Bearer "+c.token,
+             "Content-Type":"image/jpeg", "x-upsert":"true"},
+    body: b
+  });
+  /* 409 = já existe lá. Não é erro: é a foto que subiu numa tentativa anterior
+     e cujo recibo não chegou a ser gravado aqui. */
+  if(!r.ok && r.status !== 409){
+    const t = await r.text().catch(()=>"");
+    const e = new Error(t || ("HTTP "+r.status)); e.status = r.status; throw e;
+  }
+  return true;
+}
+async function supaBaixarFoto(expId, fotoId, tipo){
+  const c = syncConfig(); if(!c) return null;
+  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
+    headers:{apikey:c.chave, Authorization:"Bearer "+c.token}
+  });
+  if(!r.ok) return null;
+  return blobParaDataUrl(await r.blob());
+}
+
+/* Traz a foto só quando alguém vai olhar, e guarda no aparelho para não baixar
+   duas vezes. NÃO chama marcarSujo de propósito: receber uma foto não é editar
+   o ensaio, e carimbar aqui faria este aparelho reenviar tudo sem motivo — e
+   pior, ganhar de uma edição de verdade que outra pessoa tenha feito. */
+const FOTOS_BAIXANDO = new Set();
+async function garantirFoto(e, f, quero, adiarGravacao){
+  const campo = (quero === "media") ? "media" : "thumb";
+  if(f[campo]) return f[campo];
+  if(!f.remota || !syncPronto() || !navigator.onLine) return null;
+  const marca = f.id + "/" + campo;
+  if(FOTOS_BAIXANDO.has(marca)) return null;
+  FOTOS_BAIXANDO.add(marca);
+  try{
+    const u = await supaBaixarFoto(e.id, f.id, campo === "thumb" ? "t" : "");
+    if(u){
+      f[campo] = u;
+      /* Num lote de miniaturas quem grava é o carregador, uma vez no fim:
+         gravar o caderno inteiro a cada foto seriam dezenas de gravações
+         completas para abrir um quadro. */
+      if(!adiarGravacao) await gravarLocal(JSON.parse(JSON.stringify(ST)));
+      return u;
+    }
+  }catch(err){ /* sem sinal: a foto continua lá em cima; tenta da próxima vez */ }
+  finally{ FOTOS_BAIXANDO.delete(marca); }
+  return null;
+}
+/* Depois de desenhar a tela, preenche as miniaturas que ainda não estão aqui.
+   Uma de cada vez, para não abrir vinte conexões num sinal de lavoura. */
+let FILA_FOTOS = false;
+async function carregarMiniaturasPendentes(){
+  if(FILA_FOTOS) return;
+  const e = exp(); if(!e) return;
+  const alvos = [...document.querySelectorAll("[data-foto-baixar]")];
+  if(!alvos.length) return;
+  FILA_FOTOS = true;
+  let chegaram = 0;
+  try{
+    for(const el of alvos){
+      const f = (e.fotos||[]).find(x=>x.id === el.getAttribute("data-foto-baixar"));
+      if(!f) continue;
+      const u = await garantirFoto(e, f, "thumb", true);   // grava só no fim
+      if(u && el.parentNode){
+        chegaram++;
+        const img = document.createElement("img");
+        img.src = u; img.loading = "lazy";
+        img.alt = el.getAttribute("data-alt") || "Foto do ensaio";
+        el.parentNode.replaceChild(img, el);
+      }
+    }
+    if(chegaram) await gravarLocal(JSON.parse(JSON.stringify(ST)));
+  } finally { FILA_FOTOS = false; }
+}
+
 /* Entra com o e-mail e a senha da equipe. O que fica guardado no aparelho é o
    token de acesso e o de renovação — nunca a senha. */
 async function syncEntrar(url, chave, email, senha){
@@ -1338,10 +1447,13 @@ async function syncRenovar(){
 }
 
 let TIMER_SYNC = null;
+/* 30 segundos, não 4. Sincronizar 4 s depois de cada tecla fazia dez aparelhos
+   conversarem com o servidor o dia inteiro à toa — e cada conversa custa tráfego
+   do plano. Gravar continua instantâneo e local; só o envio é que espera. */
 function agendarSync(){
   if(!syncPronto() || !navigator.onLine) return;
   clearTimeout(TIMER_SYNC);
-  TIMER_SYNC = setTimeout(()=>sincronizar(true), 4000);
+  TIMER_SYNC = setTimeout(()=>sincronizar(true), 30000);
 }
 window.addEventListener("online", ()=>{ atualizarStatus(); agendarSync(); });
 window.addEventListener("offline", ()=>{ atualizarStatus(); });
@@ -1350,6 +1462,15 @@ window.addEventListener("offline", ()=>{ atualizarStatus(); });
    passar o dia offline em ensaios diferentes que nada se perde. Dentro de um
    mesmo ensaio vale o carimbo mais recente — dois editando o MESMO ensaio ao
    mesmo tempo é o único caso em que uma das versões cede. */
+/* A cópia do ensaio que vai para o banco, sem os bytes das imagens. O que fica
+   é a ficha da foto — tratamento, quadro, ordem, etiqueta —, que é o que os
+   outros precisam para montar a tela. A imagem em si vem do Storage, e só se
+   alguém abrir. Um ensaio com 24 fotos sai de 408 KB para menos de 2 KB. */
+function semFotos(e){
+  const c = JSON.parse(JSON.stringify(e));
+  (c.fotos||[]).forEach(f=>{ delete f.media; delete f.thumb; });
+  return c;
+}
 async function sincronizar(silencioso){
   if(SYNC.rodando) return;
   if(!syncPronto()){ if(!silencioso) toast("Configure a sincronização primeiro"); return; }
@@ -1372,7 +1493,21 @@ async function sincronizar(silencioso){
         return;
       }
       if(i<0){ ST.experimentos.push(r.dados); baixados++; }
-      else if((r.atualizado||"") > localAtual){ ST.experimentos[i] = r.dados; baixados++; }
+      else if((r.atualizado||"") > localAtual){
+        /* A versão de fora não traz os bytes das fotos — elas moram no Storage.
+           Antes de trocar, guardo as imagens que ESTE aparelho já tem e devolvo
+           depois. Sem isto, sincronizar apagaria as fotos de quem as tirou. */
+        const guardadas = {};
+        (ST.experimentos[i].fotos||[]).forEach(f=>{
+          if(f.media || f.thumb) guardadas[f.id] = {media:f.media, thumb:f.thumb};
+        });
+        ST.experimentos[i] = r.dados;
+        (ST.experimentos[i].fotos||[]).forEach(f=>{
+          const g = guardadas[f.id];
+          if(g){ if(g.media) f.media = g.media; if(g.thumb) f.thumb = g.thumb; }
+        });
+        baixados++;
+      }
     });
 
     // 2. o que é local e está mais novo sobe
@@ -1381,9 +1516,27 @@ async function sincronizar(silencioso){
       return !r || (e.atualizado||"") > (r.atualizado||"");
     });
     if(subir.length){
+      /* As fotos vão primeiro, e por fora do documento. Só depois de a imagem
+         estar guardada lá é que o ensaio a declara como `remota` — na ordem
+         inversa, outro aparelho leria a referência de uma foto inexistente. */
+      let enviadas = 0;
+      for(const e of subir){
+        for(const f of (e.fotos||[])){
+          if(f.remota || !(f.media || f.thumb)) continue;
+          try{
+            if(f.thumb) await supaSubirFoto(e.id, f.id, "t", f.thumb);
+            if(f.media) await supaSubirFoto(e.id, f.id, "",  f.media);
+            f.remota = true; enviadas++;
+          }catch(err){ /* esta foto tenta na próxima; o resto do ensaio segue */ }
+        }
+      }
+      if(enviadas) SYNC.fotosEnviadas = (SYNC.fotosEnviadas||0) + enviadas;
+
       await supa("/rest/v1/experimentos", {
         method:"POST", headers:{Prefer:"resolution=merge-duplicates"},
-        body: JSON.stringify(subir.map(e=>({id:e.id, dados:e, atualizado:e.atualizado||new Date().toISOString()})))
+        body: JSON.stringify(subir.map(e=>({
+          id:e.id, dados:semFotos(e), atualizado:e.atualizado||new Date().toISOString()
+        })))
       });
     }
 
@@ -1411,8 +1564,10 @@ async function sincronizar(silencioso){
     PERSIST.pendSync = undefined;
     render();
     if(!silencioso || baixados || subir.length){
+      const fs = SYNC.fotosEnviadas || 0; SYNC.fotosEnviadas = 0;
       toast(baixados||subir.length
         ? "Sincronizado — "+subir.length+" enviado(s), "+baixados+" recebido(s)"
+          + (fs ? " · "+fs+(fs===1?" foto":" fotos") : "")
         : "Tudo em dia");
     }
   }catch(err){
@@ -1434,7 +1589,11 @@ const FOTOS_POR_TRAT = 8;      // por tratamento, em cada quadro
    corrige junto a imagem, e nenhuma etiqueta se acumula sobre a anterior. */
 async function imagemComEtiqueta(e, f){
   const img = new Image();
+  /* Foto de outro aparelho: busca a versão grande antes de queimar a etiqueta.
+     Queimar sobre a miniatura sairia borrado numa apresentação. */
+  if(!f.media && f.remota) await garantirFoto(e, f, "media");
   img.src = f.media || f.thumb;
+  if(!img.src) throw new Error("imagem");
   await new Promise((ok,err)=>{ img.onload = ok; img.onerror = ()=>err(new Error("imagem")); });
   const w = img.naturalWidth || FOTO_MAX, h = img.naturalHeight || Math.round(w*0.75);
   const texto = etiquetaTexto(e, f);
@@ -1581,6 +1740,9 @@ function render(){
     if(alvo){ alvo.focus(); try{ alvo.setSelectionRange(selIni, selIni); }catch(err){} }
   }
   atualizarStatus();
+  /* Depois da tela montada, busca as miniaturas das fotos que vieram de outro
+     aparelho. Fora do caminho do desenho: a tela não espera pela rede. */
+  carregarMiniaturasPendentes();
 }
 
 function barraTopo(sub, voltar){
@@ -2529,8 +2691,9 @@ function telaQuadros(e){
     const capa = fs[fs.length-1];
     s += '<div class="exp-card">'
       + '<div class="exp-abrir" data-acao="abrir-quadro" data-id="'+q.id+'" role="button" tabindex="0">'
-      + (capa ? '<img src="'+capa.thumb+'" alt="" loading="lazy" style="width:100%;height:104px;'
-              + 'object-fit:cover;border-radius:var(--r-sm);margin-bottom:9px">' : '')
+      + (capa && capa.thumb
+          ? '<img src="'+capa.thumb+'" alt="" loading="lazy" style="width:100%;height:104px;'
+            + 'object-fit:cover;border-radius:var(--r-sm);margin-bottom:9px">' : '')
       + '<h3>'+(esc(q.titulo)||'<i style="color:var(--muted)">Sem título</i>')+'</h3>'
       + '<div style="font-size:.8rem;color:var(--muted);margin-top:3px">'+dataBr(q.data)+'</div>'
       + '<div class="exp-num" style="margin-top:10px">'
@@ -2641,7 +2804,13 @@ function cartaoFoto(e, f, so){
   const txt = etiquetaTexto(e, f);
   let s = '<div class="foto-cartao">'
     + '<button class="foto-face" data-acao="ver-foto" data-id="'+f.id+'">'
-    + '<img src="'+f.thumb+'" alt="'+esc(txt||"Foto do ensaio")+'" loading="lazy"></button>'
+    /* Sem miniatura aqui é foto de outro aparelho: mostra o lugar dela e o
+       carregador busca em seguida. Nunca um <img> quebrado. */
+    + (f.thumb
+        ? '<img src="'+f.thumb+'" alt="'+esc(txt||"Foto do ensaio")+'" loading="lazy">'
+        : '<span class="foto-nuvem" data-foto-baixar="'+f.id+'" data-alt="'
+          + esc(txt||"Foto do ensaio")+'">'+(f.remota?'&#8681;':'&#9633;')+'</span>')
+    + '</button>'
     + '<div class="foto-etiq">'+(esc(txt)||'<i style="color:var(--muted)">sem etiqueta</i>')+'</div>';
   /* Foto extra não tem tratamento para se nomear sozinha: a caixa de texto fica
      à vista, porque escrever nela é o único jeito de a etiqueta dizer algo. */
@@ -3073,7 +3242,11 @@ function verFoto(e, id){
   d.innerHTML = '<div class="linha" style="justify-content:space-between">'
     + '<span class="pill" style="'+chip+'">'+dataBr(x.data)+'</span>'
     + '<button class="b b-s" data-acao="fechar-foto" style="'+chip+'">Fechar</button></div>'
-    + '<img src="'+(x.media||x.thumb)+'" alt="'+esc(etq||"Foto do ensaio")+'">'
+    /* Foto que ainda não desceu abre com um pixel transparente em vez de um
+       ícone de imagem quebrada; imagemComEtiqueta troca assim que ela chega. */
+    + '<img src="'+(x.media||x.thumb
+        ||"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    + '" alt="'+esc(etq||"Foto do ensaio")+'">'
     + '<div class="lightbox-info">'
     + (t?'<span class="pill" style="'+chip+'">T'+t.num+' — '+esc(t.nome)+(x.bloco?' · Bloco '+esc(x.bloco):'')+'</span>':'')
     + (q?'<span class="pill" style="'+chip+'">'+esc(q.titulo||"Quadro")+'</span>':'')
