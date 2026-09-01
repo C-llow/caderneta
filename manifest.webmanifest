@@ -1,0 +1,17 @@
+{
+  "name": "Caderneta de Campo",
+  "short_name": "Caderneta",
+  "description": "Ensaios agronômicos: protocolo, croqui, avaliações, fotos por tratamento e análise estatística. Funciona sem internet.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#12160D",
+  "theme_color": "#12160D",
+  "lang": "pt-BR",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
+  ]
+}
