@@ -175,6 +175,31 @@ a{color:var(--accent)}
 }
 .chip-grupo.tem{background-color:var(--accent-soft); color:var(--accent); border-color:var(--accent-line)}
 .chip-grupo:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+
+/* --- etiquetas de estado --- */
+.etq-barras{display:flex; gap:4px; margin-bottom:2px}
+.etq-barra{height:6px; flex:1; max-width:44px; border-radius:99px}
+.chip-etq{
+  display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:99px;
+  background:var(--surface-2); border:1px solid var(--line); color:var(--ink-2);
+  font:600 .72rem/1.5 inherit; cursor:pointer; max-width:100%
+}
+.chip-etq:hover{border-color:var(--accent-line)}
+.etq-ponto{width:8px; height:8px; border-radius:99px; flex:none}
+.etq-nome{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* a etiqueta cheia, usada na lista de escolha e na tela de edição */
+.etq-cheia{
+  display:inline-flex; align-items:center; gap:7px; padding:7px 12px; border-radius:6px;
+  color:#fff; font-weight:600; font-size:.85rem; border:0; cursor:pointer;
+  width:100%; text-align:left; min-height:38px
+}
+.etq-lista{display:flex; flex-direction:column; gap:7px; margin:4px 0 2px}
+.etq-linha{display:flex; align-items:center; gap:8px}
+.etq-check{flex:none; width:18px; font-size:1rem; text-align:center}
+input[type="color"]{
+  width:42px; height:38px; padding:2px; border:1px solid var(--line-2);
+  border-radius:var(--r-sm); background:var(--surface); cursor:pointer; flex:none
+}
 .exp-num{display:flex; gap:16px; border-top:1px solid var(--line); padding-top:10px; margin-top:auto}
 .exp-num div{display:flex; flex-direction:column}
 .exp-num b{font-family:"IBM Plex Mono",monospace; font-size:1.05rem; font-weight:600; line-height:1}
@@ -362,11 +387,30 @@ function exp(){ return ST.experimentos.find(e=>e.id===TELA.expId) || null; }
 /* Normaliza ensaios gravados por versões anteriores: um tratamento passou a ter
    vários produtos, o ensaio ganhou fatores, vazão e anotações livres. Roda na
    abertura, sem apagar nada do que já estava lá. */
+/* As etiquetas dizem o ESTADO do ensaio, e é o que se quer enxergar de manhã:
+   o que está atrasado, o que falta relatório, o que já colheu. Um ensaio pode
+   ter mais de uma — "colheita próxima" e "relatório pendente" convivem — por
+   isso é lista, e não um campo único.
+   Estas seis são as que a equipe já usava no Trello, com as mesmas cores. */
+const ETIQUETAS_PADRAO = [
+  {id:"et-finalizado", nome:"Finalizado",         cor:"#1F845A"},
+  {id:"et-andamento",  nome:"Em andamento",       cor:"#946F00"},
+  {id:"et-colheita",   nome:"Colheita próxima",   cor:"#B65C02"},
+  {id:"et-relatorio",  nome:"Relatório pendente", cor:"#C9372C"},
+  {id:"et-perdido",    nome:"Ensaio perdido",     cor:"#803FA5"},
+  {id:"et-inicio",     nome:"Pendente de início", cor:"#1D66C9"}
+];
 function migrar(){
   if(!Array.isArray(ST.modelos)) ST.modelos = [];   // croquis reutilizáveis
   if(!Array.isArray(ST.grupos))  ST.grupos  = [];   // pastas por safra, cliente, cultura…
+  /* Só na primeira vez. Depois disso quem manda é o que o usuário editou —
+     inclusive apagar todas, se for o caso. */
+  if(!Array.isArray(ST.etiquetas)) ST.etiquetas = JSON.parse(JSON.stringify(ETIQUETAS_PADRAO));
   (ST.experimentos||[]).forEach(e=>{
     if(typeof e.grupoId !== "string") e.grupoId = "";
+    if(!Array.isArray(e.etiquetas)) e.etiquetas = [];
+    // etiqueta apagada não pode deixar referência solta no ensaio
+    e.etiquetas = e.etiquetas.filter(id=>ST.etiquetas.some(x=>x.id===id));
     /* Carimbo de quando este ensaio mudou pela última vez: é por ele que a
        sincronização decide, ensaio a ensaio, qual versão é a boa. */
     if(typeof e.atualizado !== "string") e.atualizado = e.criado || "1970-01-01T00:00:00.000Z";
@@ -1210,7 +1254,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 10";
+const VERSAO_APP = "2026-09-04 · 11";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1658,12 +1702,15 @@ async function sincronizar(silencioso){
     if(remotoG && (remotoG.atualizado||"") > meuG){
       ST.grupos = remotoG.dados.grupos || ST.grupos;
       ST.modelos = remotoG.dados.modelos || ST.modelos;
+      /* Etiquetas são da equipe, como grupos e croquis: renomear "Relatório
+         pendente" num aparelho tem de valer em todos. */
+      if(Array.isArray(remotoG.dados.etiquetas)) ST.etiquetas = remotoG.dados.etiquetas;
       ST.atualizadoGerais = remotoG.atualizado;
     } else if(!remotoG || meuG > (remotoG.atualizado||"")){
       const agora = new Date().toISOString();
       await supa("/rest/v1/gerais", {
         method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
-        body: JSON.stringify([{id:"equipe", dados:{grupos:ST.grupos, modelos:ST.modelos}, atualizado:agora}])
+        body: JSON.stringify([{id:"equipe", dados:{grupos:ST.grupos, modelos:ST.modelos, etiquetas:ST.etiquetas}, atualizado:agora}])
       });
       ST.atualizadoGerais = agora;
     }
@@ -1699,6 +1746,100 @@ async function sincronizar(silencioso){
     if(!silencioso) toast(SYNC.erro);
   }
   SYNC.rodando = false; atualizarStatus();
+}
+
+/* ============================ ETIQUETAS ============================ */
+/* Marcar o estado de um ensaio. Fica no cartão da lista de propósito: passar
+   trinta ensaios para "relatório pendente" tem de ser trinta toques, não
+   trinta idas e voltas para dentro de cada um. */
+function modalEtiquetas(e){
+  const d = document.createElement("div");
+  d.className = "modal-fundo";
+  const desenhar = ()=>{
+    d.innerHTML = '<div class="modal"><h3>Estado — '+esc(e.nome)+'</h3>'
+      + (ST.etiquetas.length
+          ? '<div class="etq-lista">'
+            + ST.etiquetas.map(t=>{
+                const on = (e.etiquetas||[]).indexOf(t.id) >= 0;
+                return '<div class="etq-linha">'
+                  + '<span class="etq-check">'+(on?'&#10003;':'')+'</span>'
+                  + '<button class="etq-cheia" data-t="'+t.id+'" style="background:'+esc(t.cor)+';'
+                  + (on?'':'opacity:.45')+'">'+esc(t.nome)+'</button></div>';
+              }).join("")
+            + '</div>'
+          : '<p style="color:var(--muted);font-size:.88rem">Nenhuma etiqueta ainda. '
+            + 'Crie em <b>Etiquetas</b>, na tela inicial.</p>')
+      + '<div class="modal-pe">'
+      + '<button class="b b-s" data-acao="editar-etqs">Editar etiquetas</button>'
+      + '<button class="b b-p" data-f="1">Pronto</button></div></div>';
+  };
+  desenhar();
+  d.addEventListener("click", ev=>{
+    const t = ev.target.closest("[data-t]");
+    if(t){
+      const i = (e.etiquetas||[]).indexOf(t.dataset.t);
+      if(i >= 0) e.etiquetas.splice(i,1); else e.etiquetas.push(t.dataset.t);
+      marcarSujo(); desenhar(); render();
+      return;
+    }
+    if(ev.target.closest('[data-acao="editar-etqs"]')){ d.remove(); modalEditarEtiquetas(); return; }
+    if(ev.target.closest("[data-f]") || ev.target === d) d.remove();
+  });
+  document.body.appendChild(d);
+}
+
+/* Editar nome e cor. A cor vem do seletor do próprio sistema — no celular abre
+   a paleta nativa, que é melhor do que qualquer grade que eu desenhasse. */
+function modalEditarEtiquetas(){
+  const d = document.createElement("div");
+  d.className = "modal-fundo";
+  const desenhar = ()=>{
+    d.innerHTML = '<div class="modal"><h3>Etiquetas</h3>'
+      + '<p style="color:var(--muted);font-size:.85rem;margin:0 0 12px">'
+      + 'O nome e a cor são seus. Elas valem para toda a equipe e chegam aos '
+      + 'outros aparelhos na sincronização.</p>'
+      + '<div class="etq-lista">'
+      + ST.etiquetas.map(t=>
+          '<div class="etq-linha">'
+          + '<input type="color" data-cor="'+t.id+'" value="'+esc(t.cor)+'" aria-label="Cor">'
+          + '<input data-nome="'+t.id+'" value="'+esc(t.nome)+'" placeholder="Nome do estado" '
+          + 'style="flex:1;min-width:0;border:1px solid var(--line-2);background:var(--surface);'
+          + 'border-radius:var(--r-sm);padding:8px 10px;font-size:.88rem;min-height:38px">'
+          + '<button class="b b-s" data-del="'+t.id+'" aria-label="Apagar" '
+          + 'style="flex:none;min-height:34px;padding:0 9px;color:var(--erro);border-color:transparent;'
+          + 'background:none;font-size:1rem">&times;</button></div>').join("")
+      + '</div>'
+      + '<button class="b b-s" data-nova="1" style="margin-top:10px">+ Nova etiqueta</button>'
+      + '<div class="modal-pe"><button class="b b-p" data-f="1">Pronto</button></div></div>';
+  };
+  desenhar();
+  d.addEventListener("input", ev=>{
+    const c = ev.target.dataset.cor, n = ev.target.dataset.nome;
+    const t = ST.etiquetas.find(x=>x.id === (c||n));
+    if(!t) return;
+    if(c) t.cor = ev.target.value; else t.nome = ev.target.value;
+    marcarGerais(); render();          // o cartão atrás do modal acompanha
+  });
+  d.addEventListener("click", async ev=>{
+    if(ev.target.closest("[data-nova]")){
+      ST.etiquetas.push({id:uid(), nome:"Novo estado", cor:"#5E6C84"});
+      marcarGerais(); desenhar(); render(); return;
+    }
+    const del = ev.target.closest("[data-del]");
+    if(del){
+      const t = ST.etiquetas.find(x=>x.id===del.dataset.del);
+      const usos = ST.experimentos.filter(e=>(e.etiquetas||[]).indexOf(del.dataset.del)>=0).length;
+      if(!await confirmar("Apagar “"+(t?t.nome:"")+"”?"
+          + (usos ? " Ela sai de "+usos+" ensaio(s)." : ""))) return;
+      ST.etiquetas = ST.etiquetas.filter(x=>x.id!==del.dataset.del);
+      ST.experimentos.forEach(e=>{
+        e.etiquetas = (e.etiquetas||[]).filter(id=>id!==del.dataset.del);
+      });
+      marcarGerais(); marcarSujo(); desenhar(); render(); return;
+    }
+    if(ev.target.closest("[data-f]") || ev.target === d) d.remove();
+  });
+  document.body.appendChild(d);
 }
 
 /* ============================ BACKUP ============================ */
@@ -2396,7 +2537,11 @@ function telaHome(){
     return busca.split(/\s+/).every(termo => alvo.includes(termo));
   };
   const noGrupo = e => busca ? true : (grupoAberto ? e.grupoId===grupoAberto : true);
-  const lista = ST.experimentos.filter(e=>casa(e) && noGrupo(e));
+  /* O filtro por estado atravessa o grupo: "o que está com relatório pendente"
+     é uma pergunta que não respeita safra nem pasta. */
+  const etqAberta = TELA.etq || "";
+  const naEtq = e => etqAberta ? (e.etiquetas||[]).indexOf(etqAberta) >= 0 : true;
+  const lista = ST.experimentos.filter(e=>casa(e) && noGrupo(e) && naEtq(e));
 
   s += '<div class="sec-cab" style="margin-bottom:14px">'
     + '<div><div class="eyebrow">Experimentos</div><h1>'
@@ -2405,6 +2550,7 @@ function telaHome(){
                            : 'Seus ensaios')
     + '</h1></div>'
     + '<div class="linha" style="gap:8px">'
+    + (so?'':'<button class="b b-s" data-acao="editar-etqs">Etiquetas</button>')
     + (so?'':'<button class="b b-s" data-acao="novo-grupo">+ Grupo</button>')
     + '<button class="b b-p" data-acao="novo-exp">+ Novo experimento</button></div></div>';
 
@@ -2447,6 +2593,28 @@ function telaHome(){
     s += '</div>';
   }
 
+  /* Filtro por estado. Fica separado do filtro de grupo porque responde outra
+     pergunta: grupo é "de qual safra", estado é "o que precisa de mim hoje". */
+  if(!busca && ST.etiquetas.length){
+    const usadas = ST.etiquetas.map(t=>({
+      t, n: ST.experimentos.filter(e=>(e.etiquetas||[]).indexOf(t.id)>=0).length
+    })).filter(x=>x.n > 0 || TELA.etq === x.t.id);
+    if(usadas.length){
+      s += '<div class="linha" style="gap:7px;margin-bottom:16px;flex-wrap:wrap">'
+        + usadas.map(({t,n})=>{
+            const on = TELA.etq === t.id;
+            return '<button class="chip-etq" data-acao="ver-etq" data-id="'+t.id+'" '
+              + 'style="'+(on ? 'background:'+esc(t.cor)+';color:#fff;border-color:'+esc(t.cor) : '')+'">'
+              + '<span class="etq-ponto" style="background:'+(on?'#fff':esc(t.cor))+'"></span>'
+              + '<span class="etq-nome">'+esc(t.nome)+'</span>'
+              + '<span style="opacity:.7;font-weight:400">'+n+'</span></button>';
+          }).join("")
+        + (TELA.etq ? '<button class="b b-ghost b-s" data-acao="ver-etq" data-id="'+TELA.etq+'" '
+                    + 'style="min-height:28px">limpar</button>' : '')
+        + '</div>';
+    }
+  }
+
   const listaFinal = grupoAberto==="__sem" && !busca
     ? ST.experimentos.filter(e=>!e.grupoId) : lista;
 
@@ -2471,10 +2639,26 @@ function telaHome(){
          repetições, contagens — está tudo lá dentro, a um toque. Numa lista de
          50 ensaios, cartão alto vira rolagem, e rolagem esconde o que importa.
          O grupo continua editável aqui mesmo: o seletor é a própria etiqueta. */
+      const ets = (e.etiquetas||[]).map(id=>ST.etiquetas.find(x=>x.id===id)).filter(Boolean);
       s += '<div class="exp-card exp-curto">'
+        /* Barras de cor no topo, como no Trello: o estado se lê antes do nome,
+           que é o ponto — abrir o app e ver o que está pendente sem ler nada. */
+        + (ets.length
+            ? '<div class="etq-barras">'
+              + ets.map(t=>'<span class="etq-barra" style="background:'+esc(t.cor)+'" '
+                  + 'title="'+esc(t.nome)+'"></span>').join("")
+              + '</div>'
+            : '')
         + '<div class="exp-abrir" data-acao="abrir-exp" data-id="'+e.id+'" role="button" tabindex="0">'
         + '<h3>'+esc(e.nome)+'</h3></div>'
         + '<div class="exp-meta">'
+        + (so ? '' : '<button class="chip-etq" data-acao="marcar-etq" data-id="'+e.id+'" '
+              + 'aria-label="Estado do ensaio">'
+              + (ets.length
+                  ? ets.map(t=>'<span class="etq-ponto" style="background:'+esc(t.cor)+'"></span>').join("")
+                    + '<span class="etq-nome">'+esc(ets[0].nome)+(ets.length>1?" +"+(ets.length-1):"")+'</span>'
+                  : '<span class="etq-nome" style="opacity:.7">sem estado</span>')
+              + '</button>')
         + (so
             ? (g?'<span class="pill pill-a">'+esc(g.nome)+'</span>':'')
             : '<select class="chip-grupo'+(e.grupoId?' tem':'')+'" data-acao="mover-grupo" data-id="'+e.id+'" '
@@ -4078,6 +4262,12 @@ document.addEventListener("click", async ev=>{
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
   }
+  else if(a==="marcar-etq"){
+    const alvo = ST.experimentos.find(x=>x.id===id);
+    if(alvo) modalEtiquetas(alvo);
+  }
+  else if(a==="editar-etqs"){ modalEditarEtiquetas(); }
+  else if(a==="ver-etq"){ TELA.etq = (TELA.etq===id ? "" : id); render(); }
   else if(a==="outro-projeto"){ TELA.outroProjeto = !TELA.outroProjeto; render(); }
   else if(a==="trocar-conta"){ TELA.trocarConta = !TELA.trocarConta; render(); }
   else if(a==="sync-entrar"){
