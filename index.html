@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 8";
+const VERSAO_APP = "2026-09-04 · 9";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1305,7 +1305,24 @@ document.addEventListener("visibilitychange", ()=>{
 /* ---- Supabase, pela API REST ---- */
 /* Sem biblioteca externa de propósito: um app que precisa abrir offline não pode
    depender de um arquivo que vem da internet toda vez. São três chamadas HTTP. */
-function syncConfig(){ return (ST.sync && ST.sync.url && ST.sync.chave) ? ST.sync : null; }
+/* O projeto da equipe vem embutido: quem usa o app só precisa do e-mail e da
+   senha. Endereço e chave publicável NÃO são segredo — a própria Supabase
+   chama esta chave de "publishable", feita para viajar dentro de aplicativos.
+   O que protege os dados é a senha de cada pessoa, mais as travas do banco,
+   que só liberam quem está autenticado. Deixar isto na tela era pedir que três
+   pessoas copiassem à mão dois códigos longos, e errassem. */
+const SUPA_URL   = "https://yobbyxtsyltlxqckrnih.supabase.co";
+const SUPA_CHAVE = "sb_publishable_XIYWV-fCEDgKR1DbWxwvuQ_LbuDPPIc";
+
+function syncConfig(){
+  const c = ST.sync;
+  if(!c) return null;
+  /* Quem entrou antes de o projeto vir embutido guardou url e chave próprias;
+     elas continuam valendo. Sem elas, usa as de fábrica. */
+  if(!c.url)   c.url   = SUPA_URL;
+  if(!c.chave) c.chave = SUPA_CHAVE;
+  return (c.url && c.chave) ? c : null;
+}
 function syncPronto(){ const c = syncConfig(); return !!(c && c.token); }
 
 async function supa(caminho, opc){
@@ -2197,28 +2214,68 @@ function telaSync(){
         + esc(SYNC.erro)+'</div></div>' : '')
     + '</div></div>';
 
-  s += '<div class="sec"><div class="eyebrow">Projeto da equipe</div>'
-    + '<h2>Onde o caderno comum fica guardado</h2>'
-    + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
-    + 'Estes dois campos vêm do painel do Supabase, em <b>Project Settings → API</b>. '
-    + 'São os mesmos nos três aparelhos. A chave <b>anon</b> é pública por natureza — '
-    + 'quem protege os dados é a senha da conta, abaixo.</p>'
-    + '<div class="card card-p grid" style="gap:14px">'
-    + '<div class="campo"><label>Endereço do projeto (Project URL)</label>'
-    + '<input id="sync-url" inputmode="url" value="'+esc(c.url||"")+'" '
-    + 'placeholder="https://xxxxxxxx.supabase.co"></div>'
-    + '<div class="campo"><label>Chave pública (anon key)</label>'
-    + '<input id="sync-chave" value="'+esc(c.chave||"")+'" placeholder="eyJhbGciOi…"></div>'
-    + '<div class="campo"><label>E-mail da conta da equipe</label>'
-    + '<input id="sync-email" inputmode="email" value="'+esc(c.email||"")+'" '
-    + 'placeholder="equipe@caltechagro.com"></div>'
-    + '<div class="campo"><label>Senha</label>'
-    + '<input id="sync-senha" type="password" placeholder="'+(ligado?"já conectado — só se precisar entrar de novo":"a senha da conta")+'">'
-    + '<span class="dica">Não fica gravada. O aparelho guarda só a autorização que o servidor devolve.</span></div>'
-    + '<div class="linha" style="justify-content:flex-end">'
-    + (syncConfig() ? '<button class="b b-perigo b-ghost" data-acao="sync-sair" style="margin-right:auto">Desconectar</button>' : '')
-    + '<button class="b b-p" data-acao="sync-entrar">'+(ligado?"Entrar de novo":"Entrar")+'</button>'
-    + '</div></div></div>';
+  /* Conectado: nada de formulário. Quem já entrou não tem o que preencher, e
+     campo preenchido na tela só serve para alguém mexer sem querer. */
+  if(ligado){
+    s += '<div class="sec"><div class="eyebrow">Conta</div>'
+      + '<h2>Conectado</h2>'
+      + '<div class="card card-p">'
+      + '<div class="linha" style="align-items:center;gap:12px;flex-wrap:wrap">'
+      + '<span class="pill pill-a" style="flex:none">&#10003; ativa</span>'
+      + '<div style="flex:1;min-width:180px">'
+      + '<div style="font-weight:600;word-break:break-all">'+esc(c.email||"—")+'</div>'
+      + '<div style="font-size:.8rem;color:var(--muted)">Este aparelho envia e recebe do caderno da equipe</div>'
+      + '</div>'
+      + '<button class="b b-perigo b-ghost" data-acao="sync-sair" style="flex:none">Sair</button>'
+      + '</div>'
+      + (TELA.trocarConta
+          ? '<div class="grid" style="gap:14px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)">'
+            + '<div class="campo"><label>E-mail</label>'
+            + '<input id="sync-email" inputmode="email" autocomplete="username" value="'+esc(c.email||"")+'"></div>'
+            + '<div class="campo"><label>Senha</label>'
+            + '<input id="sync-senha" type="password" autocomplete="current-password" placeholder="a senha desta conta"></div>'
+            + '<div class="linha" style="justify-content:flex-end">'
+            + '<button class="b b-s" data-acao="trocar-conta">Cancelar</button>'
+            + '<button class="b b-p" data-acao="sync-entrar">Entrar</button></div></div>'
+          : '<p style="font-size:.82rem;color:var(--muted);margin:12px 0 0">'
+            + 'A sessão se renova sozinha. '
+            + '<a href="#" data-acao="trocar-conta" style="color:var(--accent)">Entrar com outra conta</a></p>')
+      + '</div></div>';
+  }
+  else {
+    /* Desconectado: só e-mail e senha. Endereço e chave vêm embutidos — ver
+       SUPA_URL. Ficam atrás de "outro projeto" para o app não virar beco sem
+       saída caso um dia o banco mude de lugar. */
+    s += '<div class="sec"><div class="eyebrow">Entrar</div>'
+      + '<h2>'+(syncConfig() ? "Sua sessão expirou" : "Conectar ao caderno da equipe")+'</h2>'
+      + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
+      + (syncConfig()
+          ? 'Entre de novo para voltar a enviar e receber. O que está gravado aqui não se perdeu.'
+          : 'Use o e-mail e a senha que o responsável criou para você. Enquanto não entrar, '
+            + 'o app funciona igual — só guarda tudo apenas neste aparelho.')
+      + '</p>'
+      + '<div class="card card-p grid" style="gap:14px">'
+      + '<div class="campo"><label>E-mail</label>'
+      + '<input id="sync-email" inputmode="email" autocomplete="username" value="'+esc(c.email||"")+'" '
+      + 'placeholder="voce@caltechagro.com"></div>'
+      + '<div class="campo"><label>Senha</label>'
+      + '<input id="sync-senha" type="password" autocomplete="current-password" placeholder="a sua senha">'
+      + '<span class="dica">Não fica gravada. O aparelho guarda só a autorização que o servidor devolve.</span></div>'
+      + (TELA.outroProjeto
+          ? '<div class="campo"><label>Endereço do projeto</label>'
+            + '<input id="sync-url" inputmode="url" value="'+esc(c.url||SUPA_URL)+'"></div>'
+            + '<div class="campo"><label>Chave pública</label>'
+            + '<input id="sync-chave" value="'+esc(c.chave||SUPA_CHAVE)+'"></div>'
+          : '')
+      + '<div class="linha" style="justify-content:flex-end">'
+      + (syncConfig() ? '<button class="b b-perigo b-ghost" data-acao="sync-sair" style="margin-right:auto">Sair</button>' : '')
+      + '<button class="b b-p" data-acao="sync-entrar">Entrar</button>'
+      + '</div>'
+      + '<p style="font-size:.78rem;color:var(--muted);margin:0">'
+      + '<a href="#" data-acao="outro-projeto" style="color:var(--muted)">'
+      + (TELA.outroProjeto ? "Usar o projeto padrão" : "Usar outro projeto")+'</a></p>'
+      + '</div></div>';
+  }
 
   /* Sincronizar não é backup: um defeito que estrague os dados aqui é copiado
      para o servidor e para os outros aparelhos. Só um arquivo guardado fora
@@ -4011,18 +4068,27 @@ document.addEventListener("click", async ev=>{
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
   }
+  else if(a==="outro-projeto"){ TELA.outroProjeto = !TELA.outroProjeto; render(); }
+  else if(a==="trocar-conta"){ TELA.trocarConta = !TELA.trocarConta; render(); }
   else if(a==="sync-entrar"){
-    const url = (document.getElementById("sync-url").value||"").trim();
-    const chave = (document.getElementById("sync-chave").value||"").trim();
+    /* Os campos de endereço e chave só existem quando "outro projeto" está
+       aberto; fora disso valem os embutidos. */
+    const cu = document.getElementById("sync-url");
+    const cc = document.getElementById("sync-chave");
+    const url = ((cu && cu.value) || SUPA_URL).trim();
+    const chave = ((cc && cc.value) || SUPA_CHAVE).trim();
     const email = (document.getElementById("sync-email").value||"").trim();
     const senha = document.getElementById("sync-senha").value||"";
-    if(!url || !chave || !email || !senha){ toast("Preencha os quatro campos"); return; }
+    if(!email || !senha){ toast("Preencha o e-mail e a senha"); return; }
+    if(!url || !chave){ toast("Falta o endereço ou a chave do projeto"); return; }
     if(!navigator.onLine){ toast("Precisa de internet para entrar na primeira vez"); return; }
     el.disabled = true; toast("Entrando…");
     try{
       await syncEntrar(url, chave, email, senha);
       marcarSujo(); await salvar();
-      SYNC.erro = null; render();
+      SYNC.erro = null;
+      TELA.trocarConta = false; TELA.outroProjeto = false;
+      render();
       await sincronizar(false);
     }catch(err){
       SYNC.erro = String((err && err.message) || err).slice(0,140);
