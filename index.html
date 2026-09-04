@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 7";
+const VERSAO_APP = "2026-09-04 · 8";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1665,6 +1665,316 @@ async function sincronizar(silencioso){
   SYNC.rodando = false; atualizarStatus();
 }
 
+/* ============================ BACKUP ============================ */
+/* Sincronizar NÃO é fazer backup: se um defeito estragar os dados aqui, a
+   sincronização copia o estrago para o servidor e de lá para os outros
+   aparelhos, com toda a fidelidade. Réplica espalha erro; backup dá um ponto
+   no tempo para voltar. É a única peça que protege disso.
+
+   O arquivo é um ZIP comum, com as fotos como JPG de verdade em pastas com
+   nome de gente. Isso é deliberado: um backup que só este app consegue ler
+   vale pela metade. Assim você abre no Windows, vê as fotos, lê o JSON no
+   bloco de notas — mesmo que o app, ou eu, deixemos de existir. */
+
+/* --- escritor de ZIP, método STORE (sem compressão) ---
+   Escrito à mão porque o app precisa funcionar sem internet, e não pode
+   depender de uma biblioteca que venha de fora. JPEG já é comprimido, então
+   guardar sem compressão custa quase nada e abre em qualquer lugar. */
+const CRC_TAB = (()=>{
+  const t = new Uint32Array(256);
+  for(let n=0;n<256;n++){
+    let c = n;
+    for(let k=0;k<8;k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(u8){
+  let c = 0xFFFFFFFF;
+  for(let i=0;i<u8.length;i++) c = CRC_TAB[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function montarZip(arquivos){
+  const cod = new TextEncoder();
+  const d = new Date();
+  const hora = ((d.getHours()<<11) | (d.getMinutes()<<5) | (d.getSeconds()>>1)) & 0xFFFF;
+  const data = (((d.getFullYear()-1980)<<9) | ((d.getMonth()+1)<<5) | d.getDate()) & 0xFFFF;
+
+  const pedacos = [], central = [];
+  let desloc = 0;
+  for(const a of arquivos){
+    const nome = cod.encode(a.nome);
+    const dados = a.dados;
+    const soma = crc32(dados);
+
+    const lfh = new DataView(new ArrayBuffer(30));
+    lfh.setUint32(0, 0x04034b50, true); lfh.setUint16(4, 20, true);
+    lfh.setUint16(6, 0x0800, true);      // nomes em UTF-8
+    lfh.setUint16(8, 0, true);           // STORE
+    lfh.setUint16(10, hora, true); lfh.setUint16(12, data, true);
+    lfh.setUint32(14, soma, true);
+    lfh.setUint32(18, dados.length, true); lfh.setUint32(22, dados.length, true);
+    lfh.setUint16(26, nome.length, true); lfh.setUint16(28, 0, true);
+    pedacos.push(new Uint8Array(lfh.buffer), nome, dados);
+
+    const cd = new DataView(new ArrayBuffer(46));
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true);
+    cd.setUint16(8, 0x0800, true); cd.setUint16(10, 0, true);
+    cd.setUint16(12, hora, true); cd.setUint16(14, data, true);
+    cd.setUint32(16, soma, true);
+    cd.setUint32(20, dados.length, true); cd.setUint32(24, dados.length, true);
+    cd.setUint16(28, nome.length, true);
+    cd.setUint32(42, desloc, true);
+    central.push(new Uint8Array(cd.buffer), nome);
+
+    desloc += 30 + nome.length + dados.length;
+  }
+  let tamCentral = 0;
+  central.forEach(p=>{ tamCentral += p.length; });
+
+  const fim = new DataView(new ArrayBuffer(22));
+  fim.setUint32(0, 0x06054b50, true);
+  fim.setUint16(8, arquivos.length, true); fim.setUint16(10, arquivos.length, true);
+  fim.setUint32(12, tamCentral, true); fim.setUint32(16, desloc, true);
+
+  return new Blob(pedacos.concat(central, [new Uint8Array(fim.buffer)]),
+                  {type:"application/zip"});
+}
+
+/* --- leitor de ZIP ---
+   Lê pelo diretório central, que é como o formato manda. Aceita STORE (o que
+   nós escrevemos) e deflate, caso alguém reempacote o arquivo por fora — para
+   isso usa o DecompressionStream do próprio navegador, sem biblioteca. */
+async function lerZip(blob){
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  const dv = new DataView(buf.buffer);
+  let fim = -1;
+  for(let i = buf.length - 22; i >= 0 && i > buf.length - 65558; i--){
+    if(dv.getUint32(i, true) === 0x06054b50){ fim = i; break; }
+  }
+  if(fim < 0) throw new Error("não parece um arquivo ZIP");
+  const total = dv.getUint16(fim + 10, true);
+  let p = dv.getUint32(fim + 16, true);
+  const dec = new TextDecoder();
+  const saida = {};
+  for(let n = 0; n < total; n++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const metodo = dv.getUint16(p + 10, true);
+    const comp   = dv.getUint32(p + 20, true);
+    const lnome  = dv.getUint16(p + 28, true);
+    const lextra = dv.getUint16(p + 30, true);
+    const lcom   = dv.getUint16(p + 32, true);
+    const inicio = dv.getUint32(p + 42, true);
+    const nome   = dec.decode(buf.subarray(p + 46, p + 46 + lnome));
+
+    const ln = dv.getUint16(inicio + 26, true), le = dv.getUint16(inicio + 28, true);
+    const ini = inicio + 30 + ln + le;
+    let dados = buf.subarray(ini, ini + comp);
+    if(metodo === 8){
+      const fluxo = new Blob([dados]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      dados = new Uint8Array(await new Response(fluxo).arrayBuffer());
+    } else if(metodo !== 0){
+      throw new Error("compressão não suportada neste arquivo");
+    }
+    saida[nome] = dados;
+    p += 46 + lnome + lextra + lcom;
+  }
+  return saida;
+}
+
+function nomeSeguro(t){
+  return String(t||"").trim().replace(/[\\/:*?"<>|]/g,"-").replace(/\s+/g," ")
+    .replace(/^\.+/,"").slice(0,60) || "sem-nome";
+}
+
+/* Monta o conteúdo do backup. `comFotos` é a diferença entre 1,4 MB e algumas
+   centenas: os dados cabem num backup diário; as fotos, num de fim de safra. */
+async function montarBackup(comFotos){
+  const cod = new TextEncoder();
+  const copia = JSON.parse(JSON.stringify(ST));
+  delete copia.sync;                     // token e e-mail não vão para o arquivo
+  (copia.experimentos||[]).forEach(e=>(e.fotos||[]).forEach(f=>{ delete f.media; delete f.thumb; }));
+
+  const arquivos = [];
+  let nFotos = 0;
+  if(comFotos){
+    for(const e of (ST.experimentos||[])){
+      const pastaE = nomeSeguro(e.nome || e.id);
+      const porTrat = {};
+      for(const f of (e.fotos||[])){
+        const dados = f.media || f.thumb;
+        if(!dados) continue;
+        const q = (e.sessoesFoto||[]).find(x=>x.id===f.sessaoId);
+        const t = (e.tratamentos||[]).find(x=>x.id===f.tratId);
+        const chave = (q?nomeSeguro(q.titulo||"quadro"):"sem-quadro") + "_" + (t?("T"+t.num):"extras");
+        porTrat[chave] = (porTrat[chave]||0) + 1;
+        const nome = "fotos/"+pastaE+"/"+chave+"-"+String(porTrat[chave]).padStart(2,"0")+".jpg";
+        const b = dataUrlParaBlob(dados);
+        arquivos.push({nome, dados: new Uint8Array(await b.arrayBuffer())});
+        nFotos++;
+      }
+    }
+  }
+
+  const resumo = {
+    gerado: new Date().toISOString(),
+    versaoApp: VERSAO_APP,
+    ensaios: (ST.experimentos||[]).length,
+    avaliacoes: (ST.experimentos||[]).reduce((a,e)=>a+(e.avaliacoes||[]).length,0),
+    fotosNoCaderno: (ST.experimentos||[]).reduce((a,e)=>a+(e.fotos||[]).length,0),
+    fotosNesteArquivo: nFotos,
+    comFotos: !!comFotos
+  };
+  copia.__backup = resumo;
+
+  arquivos.unshift({nome:"caderneta.json", dados: cod.encode(JSON.stringify(copia, null, 1))});
+  arquivos.push({nome:"LEIA-ME.txt", dados: cod.encode(
+      "Backup da Caderneta de Campo — Caltech R&D\r\n"
+    + "==========================================\r\n\r\n"
+    + "Gerado em ....... " + new Date().toLocaleString("pt-BR") + "\r\n"
+    + "Versão do app ... " + VERSAO_APP + "\r\n"
+    + "Ensaios ......... " + resumo.ensaios + "\r\n"
+    + "Avaliações ...... " + resumo.avaliacoes + "\r\n"
+    + "Fotos ........... " + nFotos + (comFotos ? "" : "  (backup só de dados)") + "\r\n\r\n"
+    + "O QUE TEM AQUI\r\n"
+    + "  caderneta.json   todos os ensaios, avaliações, tratamentos e croquis\r\n"
+    + "  fotos/           as imagens, em pastas por ensaio (JPG comuns)\r\n\r\n"
+    + "COMO RESTAURAR\r\n"
+    + "  Abra o app, engrenagem, secao Backup, botao Restaurar, e escolha\r\n"
+    + "  este arquivo .zip. Ele mostra o que ha dentro antes de mexer em nada.\r\n\r\n"
+    + "IMPORTANTE\r\n"
+    + "  Este arquivo nao depende do aplicativo. O JSON abre em qualquer editor\r\n"
+    + "  de texto e as fotos sao JPG comuns, que abrem em qualquer computador.\r\n"
+    + "  Guarde-o fora do celular: OneDrive, um SSD, o que voce ja usa.\r\n")});
+
+  return {blob: montarZip(arquivos), resumo};
+}
+
+/* Salvar: no PC deixa ESCOLHER a pasta; no celular abre o compartilhamento,
+   de onde dá para mandar direto ao OneDrive. Baixar é o último recurso. */
+async function salvarBackup(blob, nome){
+  if(window.showSaveFilePicker){
+    try{
+      const h = await window.showSaveFilePicker({
+        suggestedName: nome,
+        types:[{description:"Backup da Caderneta", accept:{"application/zip":[".zip"]}}]
+      });
+      const w = await h.createWritable();
+      await w.write(blob); await w.close();
+      return "Backup salvo onde você escolheu";
+    }catch(err){
+      if(err && err.name === "AbortError") return null;   // desistiu, sem alarde
+    }
+  }
+  const arq = new File([blob], nome, {type:"application/zip"});
+  if(navigator.canShare && navigator.canShare({files:[arq]})){
+    try{ await navigator.share({files:[arq], title:nome}); return "Backup enviado"; }
+    catch(err){ if(err && err.name === "AbortError") return null; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 6000);
+  return "Backup baixado para a pasta de downloads";
+}
+
+async function fazerBackup(comFotos){
+  toast(comFotos ? "Montando o backup com as fotos — pode demorar…" : "Montando o backup…");
+  try{
+    const {blob, resumo} = await montarBackup(comFotos);
+    const dia = new Date().toISOString().slice(0,10);
+    const nome = "caderneta-" + dia + (comFotos ? "-completo" : "-dados") + ".zip";
+    const msg = await salvarBackup(blob, nome);
+    if(msg) toast(msg + " — " + mb(blob.size) + ", " + resumo.ensaios + " ensaios"
+                  + (comFotos ? ", " + resumo.fotosNesteArquivo + " fotos" : ""));
+  }catch(err){
+    toast("Não consegui montar o backup: " + String(err && err.message || err).slice(0,90));
+  }
+}
+
+/* Restaurar mostra o que há dentro ANTES de tocar em qualquer coisa. Juntar
+   compara ensaio a ensaio pelo carimbo, como a sincronização; Substituir é
+   para o caso feio e descarta o que estiver aqui, por isso pede confirmação. */
+async function restaurarBackup(arquivo){
+  let conteudo, dados;
+  try{
+    conteudo = await lerZip(arquivo);
+    const bruto = conteudo["caderneta.json"];
+    if(!bruto) throw new Error("não achei caderneta.json dentro do arquivo");
+    dados = JSON.parse(new TextDecoder().decode(bruto));
+    if(!Array.isArray(dados.experimentos)) throw new Error("o arquivo não tem ensaios");
+  }catch(err){
+    toast("Arquivo inválido: " + String(err && err.message || err).slice(0,90));
+    return;
+  }
+  const r = dados.__backup || {};
+  const quando = r.gerado ? new Date(r.gerado).toLocaleString("pt-BR") : "data desconhecida";
+  const fotosNoZip = Object.keys(conteudo).filter(n=>n.indexOf("fotos/")===0).length;
+
+  const escolha = await new Promise(ok=>{
+    const d = document.createElement("div");
+    d.className = "modal-fundo";
+    d.innerHTML = '<div class="modal"><h3>Restaurar backup</h3>'
+      + '<p style="color:var(--muted);font-size:.9rem">Este arquivo tem <b>'
+      + (dados.experimentos.length)+' ensaios</b>, <b>'
+      + (r.avaliacoes!=null?r.avaliacoes:"?")+' avaliações</b> e <b>'
+      + fotosNoZip+' fotos</b>, de '+esc(quando)+'.</p>'
+      + '<p style="color:var(--muted);font-size:.85rem"><b>Juntar</b> compara ensaio a ensaio e '
+      + 'fica com a versão mais recente de cada um. <b>Substituir</b> descarta o que está '
+      + 'neste aparelho e deixa exatamente o que há no arquivo.</p>'
+      + '<div class="modal-pe">'
+      + '<button class="b b-s" data-r="nao">Cancelar</button>'
+      + '<button class="b b-perigo b-ghost" data-r="sub">Substituir tudo</button>'
+      + '<button class="b b-p" data-r="jun">Juntar</button></div></div>';
+    d.addEventListener("click", ev=>{
+      const b = ev.target.closest("[data-r]");
+      if(b){ d.remove(); ok(b.dataset.r); }
+      else if(ev.target === d){ d.remove(); ok("nao"); }
+    });
+    document.body.appendChild(d);
+  });
+  if(escolha === "nao") return;
+  if(escolha === "sub" && !await confirmar(
+      "Substituir apaga os "+ST.experimentos.length+" ensaios deste aparelho e coloca os do arquivo no lugar. Continuar?")) return;
+
+  /* As imagens voltam do ZIP para dentro das fotos, casando pela ordem em que
+     foram gravadas — o mesmo critério usado ao montar o arquivo. */
+  const porEnsaio = {};
+  Object.keys(conteudo).forEach(n=>{
+    const m = n.match(/^fotos\/([^/]+)\/(.+)\.jpg$/i);
+    if(m){ (porEnsaio[m[1]] = porEnsaio[m[1]] || []).push({chave:m[2], dados:conteudo[n]}); }
+  });
+  for(const e of dados.experimentos){
+    const lista = (porEnsaio[nomeSeguro(e.nome || e.id)] || []).sort((a,b)=>a.chave.localeCompare(b.chave));
+    let i = 0;
+    for(const f of (e.fotos||[])){
+      if(i >= lista.length) break;
+      f.media = await blobParaDataUrl(new Blob([lista[i].dados], {type:"image/jpeg"}));
+      f.thumb = f.media;      // a miniatura se refaz sozinha na próxima abertura
+      delete f.remota;        // veio de arquivo: precisa subir de novo
+      i++;
+    }
+  }
+
+  if(escolha === "sub"){
+    ST.experimentos = dados.experimentos;
+    if(Array.isArray(dados.grupos))  ST.grupos  = dados.grupos;
+    if(Array.isArray(dados.modelos)) ST.modelos = dados.modelos;
+  } else {
+    let novos = 0, atualizados = 0;
+    dados.experimentos.forEach(v=>{
+      const i = ST.experimentos.findIndex(x=>x.id===v.id);
+      if(i < 0){ ST.experimentos.push(v); novos++; }
+      else if((v.atualizado||"") > (ST.experimentos[i].atualizado||"")){
+        ST.experimentos[i] = v; atualizados++;
+      }
+    });
+    toast(novos+" ensaio(s) novo(s), "+atualizados+" atualizado(s)");
+  }
+  migrar(); marcarSujo(); render();
+  if(escolha === "sub") toast("Restaurado: "+ST.experimentos.length+" ensaios");
+}
+
 /* ============================ FOTOS ============================ */
 const FOTO_MAX = 1280, FOTO_Q = 0.68, THUMB_MAX = 400, THUMB_Q = 0.55;
 const FOTOS_POR_TRAT = 8;      // por tratamento, em cada quadro
@@ -1909,6 +2219,40 @@ function telaSync(){
     + (syncConfig() ? '<button class="b b-perigo b-ghost" data-acao="sync-sair" style="margin-right:auto">Desconectar</button>' : '')
     + '<button class="b b-p" data-acao="sync-entrar">'+(ligado?"Entrar de novo":"Entrar")+'</button>'
     + '</div></div></div>';
+
+  /* Sincronizar não é backup: um defeito que estrague os dados aqui é copiado
+     para o servidor e para os outros aparelhos. Só um arquivo guardado fora
+     dá um ponto no tempo para voltar. */
+  {
+    const nFotos = ST.experimentos.reduce((a,e)=>a+(e.fotos||[]).length,0);
+    const nAval  = ST.experimentos.reduce((a,e)=>a+(e.avaliacoes||[]).length,0);
+    s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Backup</div>'
+      + '<h2>Uma cópia fora daqui</h2></div></div>'
+      + '<div class="card card-p">'
+      + '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">'
+      + ficha("Ensaios", String(ST.experimentos.length))
+      + ficha("Avaliações", String(nAval))
+      + ficha("Fotos", String(nFotos))
+      + '</div>'
+      + '<div class="linha" style="margin-top:14px;flex-wrap:wrap;gap:8px">'
+      + '<button class="b b-p" data-acao="backup-dados">&#11015; Backup dos dados</button>'
+      + '<button class="b b-s" data-acao="backup-completo">&#11015; Backup completo (com fotos)</button>'
+      + '<button class="b b-s" data-acao="restaurar" style="margin-left:auto">Restaurar…</button>'
+      + '</div>'
+      + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch;margin-top:12px">'
+      + 'Sai um arquivo <b>.zip</b> com um <code>caderneta.json</code> e as fotos como '
+      + 'JPG comuns, em pastas por ensaio — abre em qualquer computador, sem precisar '
+      + 'deste app. No PC você escolhe a pasta; no celular abre o compartilhamento, '
+      + 'de onde dá para mandar ao OneDrive.</p>'
+      + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
+      + '<b>Backup dos dados</b> é leve e instantâneo — faça toda semana. '
+      + '<b>Completo</b> leva as imagens e fica grande: guarde no fim de cada safra, '
+      + 'ou antes de uma mudança grande.</p>'
+      + '<div class="aviso aviso-w" style="margin-top:12px"><span>&#9888;</span><div>'
+      + 'Sincronizar <b>não</b> é backup. O servidor recebe uma cópia fiel do que estiver '
+      + 'aqui — inclusive de um erro. O backup é o único jeito de voltar atrás.</div></div>'
+      + '</div></div>';
+  }
 
   s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Versão do app</div>'
     + '<h2>'+esc(VERSAO_APP)+'</h2></div>'
@@ -3631,6 +3975,23 @@ document.addEventListener("click", async ev=>{
   if(a==="home"){ TELA={nome:"home",expId:null,aba:"protocolo",avId:null}; render(); }
   else if(a==="tela-sync"){ TELA={nome:"sync"}; render(); }
   else if(a==="sincronizar"){ sincronizar(false); }
+  else if(a==="backup-dados"){
+    if(PERSIST.pend) await salvar();      // o backup leva o que já está gravado
+    await fazerBackup(false);
+  }
+  else if(a==="backup-completo"){
+    if(PERSIST.pend) await salvar();
+    await fazerBackup(true);
+  }
+  else if(a==="restaurar"){
+    const ent = document.createElement("input");
+    ent.type = "file"; ent.accept = ".zip,application/zip";
+    ent.addEventListener("change", async ()=>{
+      const arq = (ent.files||[])[0];
+      if(arq) await restaurarBackup(arq);
+    });
+    ent.click();
+  }
   /* Grava o que estiver pendente antes de recarregar: a atualização troca o
      programa, e não pode levar junto o que ainda não foi para o disco. */
   else if(a==="buscar-atualizacao"){

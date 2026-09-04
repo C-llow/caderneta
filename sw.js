@@ -5,13 +5,15 @@
    Os DADOS do caderno não passam por aqui — moram no IndexedDB, que é do app.
    Este arquivo cuida só do "programa", não do que você escreveu nele. */
 
-const VERSAO = "caderneta-v1";
+const VERSAO = "caderneta-v2";
 const ARQUIVOS = [
   ".",
   "index.html",
   "manifest.webmanifest",
   "icone-192.png",
-  "icone-512.png"
+  "icone-512.png",
+  "icone-mask-192.png",
+  "icone-mask-512.png"
 ];
 
 self.addEventListener("install", ev=>{

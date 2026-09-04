@@ -1,9 +1,10 @@
 {
-  "name": "Caltech R&D — Caderneta de Campo",
+  "name": "Caltech R&D",
   "short_name": "Caltech R&D",
   "description": "Ensaios agronômicos: protocolo, croqui, avaliações, fotos por tratamento e análise estatística. Funciona sem internet.",
   "start_url": ".",
   "scope": ".",
+  "id": "/caderneta/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#FFFFFF",
@@ -13,6 +14,7 @@
   "icons": [
     { "src": "icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icone-mask-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icone-mask-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
   ]
 }
