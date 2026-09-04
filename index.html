@@ -144,6 +144,45 @@ a{color:var(--accent)}
 
 /* ---------- lista de experimentos ---------- */
 .exp-lista{display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+
+/* --- grupos lado a lado, como as listas do Trello --- */
+.quadros{
+  display:flex; gap:12px; overflow-x:auto; overflow-y:visible;
+  scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch;
+  padding-bottom:10px; scrollbar-width:thin
+}
+.quadros::-webkit-scrollbar{height:7px}
+.quadros::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px}
+.quadro{
+  /* 84% no celular deixa a coluna seguinte espiando — é o que ensina que dá
+     para deslizar, sem precisar de seta nem instrução. */
+  flex:0 0 min(84%, 300px); scroll-snap-align:start;
+  display:flex; flex-direction:column; gap:9px
+}
+.quadro-cab{
+  display:flex; align-items:center; gap:8px; padding:0 3px 7px;
+  border-bottom:2px solid var(--line-2); position:sticky; top:0;
+  background:var(--ground); z-index:1
+}
+.quadro-nome{
+  font-family:Archivo,system-ui,sans-serif; font-weight:600; font-size:.9rem;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1
+}
+.quadro-n{
+  font-size:.72rem; font-weight:600; color:var(--muted); background:var(--surface-2);
+  border:1px solid var(--line); border-radius:99px; padding:1px 8px; flex:none
+}
+.quadro[data-solto] .quadro-nome{color:var(--muted); font-style:italic}
+.quadro-corpo{display:flex; flex-direction:column; gap:10px}
+.quadro-vazio{
+  border:1px dashed var(--line-2); border-radius:var(--r); padding:18px 12px;
+  text-align:center; font-size:.82rem; color:var(--muted)
+}
+.dica-quadros{font-size:.76rem; color:var(--muted); margin:2px 0 0; text-align:center}
+@media (min-width:760px){
+  .quadro{flex:0 0 300px}
+  .dica-quadros{display:none}
+}
 .exp-card{
   background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
   padding:15px; cursor:pointer; text-align:left; width:100%; box-shadow:var(--shadow);
@@ -1254,7 +1293,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 11";
+const VERSAO_APP = "2026-09-04 · 12";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -2541,6 +2580,9 @@ function telaHome(){
      é uma pergunta que não respeita safra nem pasta. */
   const etqAberta = TELA.etq || "";
   const naEtq = e => etqAberta ? (e.etiquetas||[]).indexOf(etqAberta) >= 0 : true;
+  /* Com as colunas na tela, a fila de botões de grupo diz a mesma coisa duas
+     vezes e ainda empurra os ensaios para baixo. */
+  const emColunas = !busca && !grupoAberto && !etqAberta && ST.grupos.length > 0;
   const lista = ST.experimentos.filter(e=>casa(e) && noGrupo(e) && naEtq(e));
 
   s += '<div class="sec-cab" style="margin-bottom:14px">'
@@ -2570,7 +2612,7 @@ function telaHome(){
     + '</div>';
 
   // grupos (escondidos durante a busca, que varre tudo)
-  if(!busca && ST.grupos.length){
+  if(!busca && !emColunas && ST.grupos.length){
     s += '<div class="linha" style="gap:8px;margin-bottom:16px">'
       + '<button class="b b-s'+(!grupoAberto?' b-p':'')+'" data-acao="ver-grupo" data-id="">'
       + 'Todos <span style="opacity:.7">'+ST.experimentos.length+'</span></button>';
@@ -2632,8 +2674,69 @@ function telaHome(){
     /* O cartão deixou de ser um <button> para caber o seletor de grupo dentro
        dele — um <select> não pode viver dentro de um botão. A área de cima
        continua sendo o que abre o ensaio. */
-    s += '<div class="exp-lista">';
-    listaFinal.forEach(e=>{
+    /* Grupos lado a lado, como as listas do Trello: cada coluna é uma safra,
+       e passar o dedo para o lado troca de grupo. Vale a pena porque a pergunta
+       "o que tem nesta safra" é a mais frequente, e antes exigia voltar ao topo
+       e tocar num filtro. Só entra quando há grupos e nenhum filtro estreitando
+       a lista — buscando ou filtrando, o resultado é um só e coluna atrapalha. */
+    if(emColunas){
+      const colunas = ST.grupos.map(g=>({
+        nome: g.nome,
+        itens: listaFinal.filter(e=>e.grupoId===g.id)
+      }));
+      const soltos = listaFinal.filter(e=>!e.grupoId || !ST.grupos.some(g=>g.id===e.grupoId));
+      if(soltos.length) colunas.push({nome:"Sem grupo", itens:soltos, solto:true});
+
+      s += '<div class="quadros">';
+      colunas.forEach(col=>{
+        s += '<section class="quadro"'+(col.solto?' data-solto="1"':'')+'>'
+          + '<div class="quadro-cab"><span class="quadro-nome">'+esc(col.nome)+'</span>'
+          + '<span class="quadro-n">'+col.itens.length+'</span></div>'
+          + '<div class="quadro-corpo">'
+          + (col.itens.length
+              ? col.itens.map(e=>cartaoExperimento(e, so)).join("")
+              : '<div class="quadro-vazio">Nenhum ensaio aqui</div>')
+          + '</div></section>';
+      });
+      s += '</div>';
+      s += '<p class="dica-quadros">Deslize para o lado para ver os outros grupos.</p>';
+    }
+    else {
+      s += '<div class="exp-lista">';
+      listaFinal.forEach(e=>{ s += cartaoExperimento(e, so); });
+      s += '</div>';
+    }
+  }
+
+  const totFotos = ST.experimentos.reduce((a,e)=>a+e.fotos.length,0);
+  const lib = bytesLiberaveis(), cabem = fotosQueAindaCabem();
+  s += '<div class="card card-p" style="margin-top:26px">'
+    + '<div class="sec-cab"><div class="eyebrow">Armazenamento</div>'
+    + '<span class="pill '+(cls==="e"?"pill-e":cls==="w"?"pill-w":"")+'">'+mb(b)+' de '+mb(lim)+'</span></div>'
+    + '<div class="barra" style="margin:10px 0 8px"><i class="'+cls+'" style="width:'+pc.toFixed(1)+'%"></i></div>'
+    + '<p style="font-size:.8rem;color:var(--muted);max-width:64ch">'
+    + (totFotos ? '<b>'+totFotos+' foto'+(totFotos===1?'':'s')+'</b> guardada'+(totFotos===1?'':'s')+'. ' : '')
+    + (cabem.total===0
+        ? '<b>Espaço esgotado.</b> Libere as versões ampliadas abaixo, ou crie outro experimento — cada um tem o seu próprio espaço.'
+        : 'Ainda cabem cerca de <b>'+cabem.total+'</b> fotos'
+          + (cabem.ampliadas
+              ? ': '+cabem.ampliadas+' com versão ampliada e mais '+cabem.miniaturas+' em miniatura depois disso.'
+              : ', em miniatura — resolução suficiente para identificar a parcela e o sintoma. '
+                + 'Para manter o original em resolução cheia, use o campo de link na foto.'))
+    + '</p>'
+    + (lib > 512*1024
+        ? '<div class="linha" style="margin-top:12px"><button class="b b-s" data-acao="liberar">'
+          + 'Liberar '+mb(lib)+'</button><span style="font-size:.76rem;color:var(--muted);flex:1;min-width:180px">'
+          + 'Descarta a versão ampliada das fotos e mantém as miniaturas e todas as etiquetas.</span></div>'
+        : '')
+    + '</div>';
+
+  return s + '</div>';
+}
+
+/* O cartão do ensaio, usado tanto na lista corrida quanto dentro das colunas. */
+function cartaoExperimento(e, so){
+      let s = "";
       const g = ST.grupos.find(x=>x.id===e.grupoId);
       /* Cartão curto: nome, grupo e tratamentos. O resto — cultura, delineamento,
          repetições, contagens — está tudo lá dentro, a um toque. Numa lista de
@@ -2670,34 +2773,7 @@ function telaHome(){
         + '<span class="pill">'+e.tratamentos.length+' trat.</span>'
         + '</div>'
         + '</div>';
-    });
-    s += '</div>';
-  }
-
-  const totFotos = ST.experimentos.reduce((a,e)=>a+e.fotos.length,0);
-  const lib = bytesLiberaveis(), cabem = fotosQueAindaCabem();
-  s += '<div class="card card-p" style="margin-top:26px">'
-    + '<div class="sec-cab"><div class="eyebrow">Armazenamento</div>'
-    + '<span class="pill '+(cls==="e"?"pill-e":cls==="w"?"pill-w":"")+'">'+mb(b)+' de '+mb(lim)+'</span></div>'
-    + '<div class="barra" style="margin:10px 0 8px"><i class="'+cls+'" style="width:'+pc.toFixed(1)+'%"></i></div>'
-    + '<p style="font-size:.8rem;color:var(--muted);max-width:64ch">'
-    + (totFotos ? '<b>'+totFotos+' foto'+(totFotos===1?'':'s')+'</b> guardada'+(totFotos===1?'':'s')+'. ' : '')
-    + (cabem.total===0
-        ? '<b>Espaço esgotado.</b> Libere as versões ampliadas abaixo, ou crie outro experimento — cada um tem o seu próprio espaço.'
-        : 'Ainda cabem cerca de <b>'+cabem.total+'</b> fotos'
-          + (cabem.ampliadas
-              ? ': '+cabem.ampliadas+' com versão ampliada e mais '+cabem.miniaturas+' em miniatura depois disso.'
-              : ', em miniatura — resolução suficiente para identificar a parcela e o sintoma. '
-                + 'Para manter o original em resolução cheia, use o campo de link na foto.'))
-    + '</p>'
-    + (lib > 512*1024
-        ? '<div class="linha" style="margin-top:12px"><button class="b b-s" data-acao="liberar">'
-          + 'Liberar '+mb(lib)+'</button><span style="font-size:.76rem;color:var(--muted);flex:1;min-width:180px">'
-          + 'Descarta a versão ampliada das fotos e mantém as miniaturas e todas as etiquetas.</span></div>'
-        : '')
-    + '</div>';
-
-  return s + '</div>';
+  return s;
 }
 
 /* --------- EXPERIMENTO --------- */
@@ -3326,10 +3402,25 @@ function abaAvaliacoes(e){
     s += '</tbody></table></div></div>';
   }
 
-  s += '<div class="campo" style="margin-top:16px"><label>Observações desta avaliação</label>'
-    + (fixaAv ? '<div class="protocolo" style="font-size:.95rem">'+(esc(av.obs)||'<i style="color:var(--muted)">—</i>')+'</div>'
-          : '<textarea class="serif" data-k="obs.'+av.id+'" data-campo="obs.'+av.id+'" rows="3" '
-            + 'placeholder="Condições no dia, ocorrências, notas sobre parcelas específicas.">'+esc(av.obs)+'</textarea>')
+  /* A anotação é a única parte da avaliação que se escreve DEPOIS: "choveu na
+     madrugada", "a parcela 12 foi pisada". Travar os dados e travar o texto
+     junto obrigava a destravar a tabela inteira só para corrigir uma frase —
+     e tabela destravada no campo é dado alterado sem querer. Por isso a
+     anotação tem o próprio botão, independente da trava dos números. */
+  const editandoObs = TELA.editObs === av.id;
+  s += '<div class="campo" style="margin-top:16px">'
+    + '<div class="linha" style="justify-content:space-between;align-items:center;gap:8px">'
+    + '<label style="margin:0">Observações desta avaliação</label>'
+    + (so ? '' :
+        editandoObs
+          ? '<button class="b b-s b-p" data-acao="obs-pronto" style="min-height:30px;padding:0 12px">Pronto</button>'
+          : '<button class="b b-s" data-acao="editar-obs" data-id="'+av.id+'" '
+            + 'style="min-height:30px;padding:0 12px">'+(av.obs?"Editar":"+ Anotar")+'</button>')
+    + '</div>'
+    + ((fixaAv && !editandoObs)
+        ? '<div class="protocolo" style="font-size:.95rem">'+(esc(av.obs)||'<i style="color:var(--muted)">—</i>')+'</div>'
+        : '<textarea class="serif" data-k="obs.'+av.id+'" data-campo="obs.'+av.id+'" rows="3" '
+          + 'placeholder="Condições no dia, ocorrências, notas sobre parcelas específicas.">'+esc(av.obs)+'</textarea>')
     + '</div>';
   return s+'</div>';
 }
@@ -4262,6 +4353,12 @@ document.addEventListener("click", async ev=>{
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
   }
+  else if(a==="editar-obs"){
+    TELA.editObs = id; render();
+    const t = document.querySelector('[data-k="obs.'+id+'"]');
+    if(t){ t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  }
+  else if(a==="obs-pronto"){ TELA.editObs = null; render(); }
   else if(a==="marcar-etq"){
     const alvo = ST.experimentos.find(x=>x.id===id);
     if(alvo) modalEtiquetas(alvo);
@@ -4341,6 +4438,12 @@ document.addEventListener("click", async ev=>{
   else if(a==="del-prod"){
     const t = e.tratamentos.find(x=>x.id===id);
     if(t){
+      const p = (t.produtos||[]).find(x=>x.id===el.dataset.prod);
+      /* Linha em branco sai sem cerimônia: perguntar por algo vazio treina a
+         pessoa a confirmar no automático, e aí a pergunta deixa de proteger. */
+      const temConteudo = p && (p.nome || p.dose || p.unidade);
+      if(temConteudo && !await confirmar(
+          "Excluir o produto “"+(p.nome||"sem nome")+"” do tratamento "+(t.num||"")+"?")) return;
       t.produtos = t.produtos.filter(p=>p.id!==el.dataset.prod);
       if(!t.produtos.length) t.produtos.push({id:uid(), nome:"", dose:"", unidade:"", aplicacao:""});
       marcarSujo(); render();
@@ -4366,6 +4469,13 @@ document.addEventListener("click", async ev=>{
     const f = e.fatores.find(x=>x.id===id);
     if(f){
       const nv = el.dataset.nivel;
+      const nivel = (f.niveis||[]).find(n=>n.id===nv);
+      /* Apagar um nível desmonta as combinações que o usam — por isso a
+         pergunta diz de quantos tratamentos ele sai, e não só "tem certeza?". */
+      const usos = e.tratamentos.filter(t=>t.niveis && t.niveis[id]===nv).length;
+      if((nivel && nivel.nome || usos) && !await confirmar(
+          "Excluir o nível “"+((nivel&&nivel.nome)||"sem nome")+"” de "+esc(f.nome)+"?"
+          + (usos ? " Ele sai de "+usos+" tratamento(s)." : ""))) return;
       f.niveis = f.niveis.filter(n=>n.id!==nv);
       e.tratamentos.forEach(t=>{ if(t.niveis[id]===nv) delete t.niveis[id]; });
       marcarSujo(); render();
