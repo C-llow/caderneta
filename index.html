@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-01 · 5";
+const VERSAO_APP = "2026-09-04 · 6";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1326,7 +1326,14 @@ async function supa(caminho, opc){
     const txt = await r.text().catch(()=>"");
     const e = new Error(txt || ("HTTP "+r.status)); e.status = r.status; throw e;
   }
-  return r.status === 204 ? null : r.json();
+  /* Gravar devolve 201 com o corpo VAZIO, e `Response.json()` num corpo vazio
+     estoura "Unexpected end of JSON input" — foi assim que a primeira
+     sincronização de verdade falhou. Ler o texto antes de interpretar cobre
+     qualquer resposta sem corpo, venha ela como 201, 204 ou outra. */
+  const corpo = await r.text();
+  if(!corpo) return null;
+  try{ return JSON.parse(corpo); }
+  catch(err){ return null; }
 }
 
 /* ---- Fotos no Storage ----
@@ -1586,7 +1593,7 @@ async function sincronizar(silencioso){
       if(enviadas) SYNC.fotosEnviadas = (SYNC.fotosEnviadas||0) + enviadas;
 
       await supa("/rest/v1/experimentos", {
-        method:"POST", headers:{Prefer:"resolution=merge-duplicates"},
+        method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
         body: JSON.stringify(subir.map(e=>({
           id:e.id, dados:semFotos(e), atualizado:e.atualizado||new Date().toISOString()
         })))
@@ -1604,7 +1611,7 @@ async function sincronizar(silencioso){
     } else if(!remotoG || meuG > (remotoG.atualizado||"")){
       const agora = new Date().toISOString();
       await supa("/rest/v1/gerais", {
-        method:"POST", headers:{Prefer:"resolution=merge-duplicates"},
+        method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
         body: JSON.stringify([{id:"equipe", dados:{grupos:ST.grupos, modelos:ST.modelos}, atualizado:agora}])
       });
       ST.atualizadoGerais = agora;
@@ -3664,7 +3671,7 @@ document.addEventListener("click", async ev=>{
          próximo aparelho a sincronizar traria o ensaio de volta como novidade. */
       if(syncPronto() && navigator.onLine){
         supa("/rest/v1/experimentos", {
-          method:"POST", headers:{Prefer:"resolution=merge-duplicates"},
+          method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
           body: JSON.stringify([{id:idExcluido, dados:{}, removido:true,
                                  atualizado:new Date().toISOString()}])
         }).catch(()=>{ SYNC.erro = "A exclusão ainda não chegou à equipe"; atualizarStatus(); });
