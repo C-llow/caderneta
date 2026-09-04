@@ -155,7 +155,26 @@ a{color:var(--accent)}
 .exp-abrir{cursor:pointer; display:flex; flex-direction:column; gap:2px; flex:1}
 .exp-abrir:hover h3{color:var(--accent)}
 .exp-abrir:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:6px}
-.exp-meta{display:flex; gap:6px; flex-wrap:wrap}
+.exp-meta{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
+/* Cartão curto: duas linhas, sem o rodapé de contagens. */
+.exp-card.exp-curto{gap:8px; padding:13px 14px}
+.exp-card.exp-curto h3{font-size:.97rem; line-height:1.3}
+/* O seletor de grupo é a própria etiqueta: edita no lugar, sem parecer
+   formulário e sem custar uma linha inteira do cartão. */
+.chip-grupo{
+  appearance:none; -webkit-appearance:none;
+  padding:3px 22px 3px 9px; border-radius:99px;
+  font:600 .72rem/1.5 inherit; font-family:inherit;
+  background:var(--surface-2) no-repeat right 7px center;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                   linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-size:4px 4px,4px 4px;
+  background-position:calc(100% - 11px) calc(50% + 1px),calc(100% - 7px) calc(50% + 1px);
+  color:var(--muted); border:1px solid var(--line); max-width:52%;
+  text-overflow:ellipsis; white-space:nowrap; cursor:pointer
+}
+.chip-grupo.tem{background-color:var(--accent-soft); color:var(--accent); border-color:var(--accent-line)}
+.chip-grupo:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
 .exp-num{display:flex; gap:16px; border-top:1px solid var(--line); padding-top:10px; margin-top:auto}
 .exp-num div{display:flex; flex-direction:column}
 .exp-num b{font-family:"IBM Plex Mono",monospace; font-size:1.05rem; font-weight:600; line-height:1}
@@ -1191,7 +1210,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 9";
+const VERSAO_APP = "2026-09-04 · 10";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -2448,33 +2467,24 @@ function telaHome(){
     s += '<div class="exp-lista">';
     listaFinal.forEach(e=>{
       const g = ST.grupos.find(x=>x.id===e.grupoId);
-      s += '<div class="exp-card">'
+      /* Cartão curto: nome, grupo e tratamentos. O resto — cultura, delineamento,
+         repetições, contagens — está tudo lá dentro, a um toque. Numa lista de
+         50 ensaios, cartão alto vira rolagem, e rolagem esconde o que importa.
+         O grupo continua editável aqui mesmo: o seletor é a própria etiqueta. */
+      s += '<div class="exp-card exp-curto">'
         + '<div class="exp-abrir" data-acao="abrir-exp" data-id="'+e.id+'" role="button" tabindex="0">'
-        + '<h3>'+esc(e.nome)+'</h3>'
-        + '<div style="font-size:.8rem;color:var(--muted);margin-top:3px">'+esc([e.cultura,e.cultivar].filter(Boolean).join(" · "))+'</div>'
-        + '<div class="exp-meta" style="margin-top:10px">'
-        + (g?'<span class="pill pill-a">'+esc(g.nome)+'</span>':'')
-        + '<span class="pill">'+esc((DELINS[e.delineamento]||{}).curto||e.delineamento)+'</span>'
+        + '<h3>'+esc(e.nome)+'</h3></div>'
+        + '<div class="exp-meta">'
+        + (so
+            ? (g?'<span class="pill pill-a">'+esc(g.nome)+'</span>':'')
+            : '<select class="chip-grupo'+(e.grupoId?' tem':'')+'" data-acao="mover-grupo" data-id="'+e.id+'" '
+              + 'aria-label="Grupo do ensaio">'
+              + '<option value=""'+(!e.grupoId?" selected":"")+'>sem grupo</option>'
+              + ST.grupos.map(x=>'<option value="'+x.id+'"'+(e.grupoId===x.id?" selected":"")+'>'
+                  + esc(x.nome)+'</option>').join("")
+              + '</select>')
         + '<span class="pill">'+e.tratamentos.length+' trat.</span>'
-        + '<span class="pill">'+e.nRep+' rep.</span>'
-        + (e.local?'<span class="pill">'+esc(e.local)+'</span>':'')
         + '</div>'
-        + '<div class="exp-num">'
-        + '<div><b>'+e.avaliacoes.length+'</b><span>avaliações</span></div>'
-        + '<div><b>'+e.fotos.length+'</b><span>fotos</span></div>'
-        + '<div><b>'+(e.tratamentos.length*e.nRep)+'</b><span>parcelas</span></div>'
-        + '</div></div>'
-        + (so ? '' :
-            '<div class="linha" style="gap:7px;margin-top:10px;padding-top:10px;'
-            + 'border-top:1px solid var(--line)">'
-            + '<span class="eyebrow" style="flex:none">Grupo</span>'
-            + '<select data-acao="mover-grupo" data-id="'+e.id+'" '
-            + 'style="flex:1;min-width:0;border:1px solid var(--line-2);background:var(--surface);'
-            + 'border-radius:5px;padding:7px 8px;min-height:36px;font-size:.83rem">'
-            + '<option value=""'+(!e.grupoId?" selected":"")+'>— sem grupo —</option>'
-            + ST.grupos.map(x=>'<option value="'+x.id+'"'+(e.grupoId===x.id?" selected":"")+'>'
-                + esc(x.nome)+'</option>').join("")
-            + '</select></div>')
         + '</div>';
     });
     s += '</div>';
