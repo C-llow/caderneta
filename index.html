@@ -1191,7 +1191,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-04 · 6";
+const VERSAO_APP = "2026-09-04 · 7";
 
 const BD_NOME = "caderneta-campo", BD_LOJA = "estado";
 let BD = null;
@@ -1360,14 +1360,25 @@ function blobParaDataUrl(b){
     l.readAsDataURL(b);
   });
 }
-async function supaSubirFoto(expId, fotoId, tipo, dataUrl){
+/* Toda conversa com o Storage passa por aqui, para ter a MESMA recuperação de
+   sessão que o supa() dá ao banco. Sem isto, a hora em que o token vence é a
+   hora em que as fotos param de subir — caladas, enquanto avaliações e
+   protocolos continuam sincronizando normalmente e nada parece errado. */
+async function supaArquivo(caminho, opc, _retentado){
   const c = syncConfig(); if(!c) throw new Error("sem configuração");
-  const b = dataUrlParaBlob(dataUrl);
-  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
+  const o = Object.assign({}, opc);
+  o.headers = Object.assign({apikey:c.chave, Authorization:"Bearer "+c.token},
+                            (opc||{}).headers || {});
+  const r = await fetch(c.url + caminho, o);
+  if(r.status === 401 && !_retentado && await syncRenovar())
+    return supaArquivo(caminho, opc, true);
+  return r;
+}
+async function supaSubirFoto(expId, fotoId, tipo, dataUrl){
+  const r = await supaArquivo(caminhoFoto(expId, fotoId, tipo), {
     method:"POST",
-    headers:{apikey:c.chave, Authorization:"Bearer "+c.token,
-             "Content-Type":"image/jpeg", "x-upsert":"true"},
-    body: b
+    headers:{"Content-Type":"image/jpeg", "x-upsert":"true"},
+    body: dataUrlParaBlob(dataUrl)
   });
   /* 409 = já existe lá. Não é erro: é a foto que subiu numa tentativa anterior
      e cujo recibo não chegou a ser gravado aqui. */
@@ -1378,11 +1389,7 @@ async function supaSubirFoto(expId, fotoId, tipo, dataUrl){
   return true;
 }
 async function supaApagarFoto(expId, fotoId, tipo){
-  const c = syncConfig(); if(!c) throw new Error("sem configuração");
-  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
-    method:"DELETE",
-    headers:{apikey:c.chave, Authorization:"Bearer "+c.token}
-  });
+  const r = await supaArquivo(caminhoFoto(expId, fotoId, tipo), {method:"DELETE"});
   // 404 = já não está lá. O objetivo era esse.
   if(!r.ok && r.status !== 404) throw new Error("HTTP "+r.status);
   return true;
@@ -1411,10 +1418,8 @@ async function limparFotosApagadas(){
 }
 
 async function supaBaixarFoto(expId, fotoId, tipo){
-  const c = syncConfig(); if(!c) return null;
-  const r = await fetch(c.url + caminhoFoto(expId, fotoId, tipo), {
-    headers:{apikey:c.chave, Authorization:"Bearer "+c.token}
-  });
+  if(!syncConfig()) return null;
+  const r = await supaArquivo(caminhoFoto(expId, fotoId, tipo));
   if(!r.ok) return null;
   return blobParaDataUrl(await r.blob());
 }
@@ -1579,7 +1584,8 @@ async function sincronizar(silencioso){
       /* As fotos vão primeiro, e por fora do documento. Só depois de a imagem
          estar guardada lá é que o ensaio a declara como `remota` — na ordem
          inversa, outro aparelho leria a referência de uma foto inexistente. */
-      let enviadas = 0;
+      let enviadas = 0, falhas = 0;
+      SYNC.erroFoto = null;
       for(const e of subir){
         for(const f of (e.fotos||[])){
           if(f.remota || !(f.media || f.thumb)) continue;
@@ -1587,7 +1593,16 @@ async function sincronizar(silencioso){
             if(f.thumb) await supaSubirFoto(e.id, f.id, "t", f.thumb);
             if(f.media) await supaSubirFoto(e.id, f.id, "",  f.media);
             f.remota = true; enviadas++;
-          }catch(err){ /* esta foto tenta na próxima; o resto do ensaio segue */ }
+          }catch(err){
+            /* O resto do ensaio segue, e esta foto entra de novo na fila. Mas o
+               motivo NÃO se perde: uma foto que não sobe calada é indistinguível
+               de uma que subiu, e foi assim que a primeira falha real passou
+               despercebida. Guarda-se o primeiro erro, que é o que explica. */
+            falhas++;
+            if(!SYNC.erroFoto)
+              SYNC.erroFoto = (err && err.message) ? String(err.message).slice(0,140)
+                                                   : "não consegui enviar a foto";
+          }
         }
       }
       if(enviadas) SYNC.fotosEnviadas = (SYNC.fotosEnviadas||0) + enviadas;
@@ -1626,11 +1641,19 @@ async function sincronizar(silencioso){
     await gravarLocal(JSON.parse(JSON.stringify(ST)));
     PERSIST.pendSync = undefined;
     render();
-    if(!silencioso || baixados || subir.length){
+    /* Foto que ficou para trás aparece SEMPRE, mesmo em sincronização
+       silenciosa: é o aviso que faltava quando as fotos sumiam sem explicação. */
+    const pendentes = ST.experimentos.reduce((a,e)=>
+      a + (e.fotos||[]).filter(f=>!f.remota && (f.media||f.thumb)).length, 0);
+    if(pendentes && SYNC.erroFoto){
+      toast(pendentes+(pendentes===1?" foto não subiu":" fotos não subiram")+": "+SYNC.erroFoto);
+    }
+    else if(!silencioso || baixados || subir.length){
       const fs = SYNC.fotosEnviadas || 0; SYNC.fotosEnviadas = 0;
       toast(baixados||subir.length
         ? "Sincronizado — "+subir.length+" enviado(s), "+baixados+" recebido(s)"
           + (fs ? " · "+fs+(fs===1?" foto":" fotos") : "")
+          + (pendentes ? " · "+pendentes+" foto(s) na fila" : "")
         : "Tudo em dia");
     }
   }catch(err){
