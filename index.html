@@ -1292,7 +1292,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-26 · 13";
+const VERSAO_APP = "2026-09-26 · 14";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -1850,7 +1850,30 @@ async function sincronizar(silencioso){
     const c = syncConfig();
     if(c.expira && Date.now() > c.expira - 60000) await syncRenovar();
 
-    const remotos = await supa("/rest/v1/experimentos?select=id,dados,atualizado,removido");
+    /* Duas etapas, para não pagar tráfego à toa. Antes cada sincronização
+       baixava TODOS os ensaios inteiros, mesmo sem nada ter mudado: com 50
+       ensaios de ~28 KB, 1,4 MB por rodada — uns 10 GB por mês num uso normal
+       de três aparelhos, o dobro do plano gratuito.
+       1ª etapa: só id, carimbo e lápide de cada ensaio (bytes, não KB).
+       2ª etapa: o documento inteiro apenas dos que estão mais novos lá fora.
+       A regra de decisão é a MESMA de antes — compara os mesmos carimbos —,
+       só se deixou de baixar o que seria descartado. */
+    const fichas = await supa("/rest/v1/experimentos?select=id,atualizado,removido");
+    const localPorId = {};
+    ST.experimentos.forEach(e=>{ localPorId[e.id] = e.atualizado || ""; });
+    const querDados = fichas
+      .filter(r=>!r.removido && (!(r.id in localPorId) || (r.atualizado||"") > localPorId[r.id]))
+      .map(r=>r.id);
+    const completos = {};
+    // em lotes: um endereço com centenas de ids passaria do tamanho que o servidor aceita
+    for(let k = 0; k < querDados.length; k += 40){
+      const lote = querDados.slice(k, k+40).map(id=>'"'+String(id).replace(/"/g,"")+'"').join(",");
+      const docs = await supa("/rest/v1/experimentos?select=id,dados,atualizado,removido&id=in.("
+                              + encodeURIComponent(lote) + ")");
+      (docs||[]).forEach(d=>{ completos[d.id] = d; });
+    }
+    // a lista final tem o mesmo formato de antes; quem não mudou vem sem `dados`
+    const remotos = fichas.map(r=>completos[r.id] || r);
     const porId = {}; remotos.forEach(r=>{ porId[r.id] = r; });
 
     // 1. o que veio de fora e está mais novo entra no lugar do local
@@ -1866,6 +1889,9 @@ async function sincronizar(silencioso){
         }
         return;
       }
+      /* Sem `dados` = não mudou, ou sumiu entre as duas etapas. Nos dois casos
+         não há o que trazer, e empurrar um ensaio vazio corromperia a lista. */
+      if(!r.dados) return;
       if(i<0){ ST.experimentos.push(r.dados); baixados++; }
       else if((r.atualizado||"") > localAtual){
         /* A versão de fora não traz os bytes das fotos — elas moram no Storage.
