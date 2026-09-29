@@ -100,6 +100,8 @@ a{color:var(--accent)}
 .b-x:hover{background:var(--erro-soft); border-color:var(--erro); color:var(--erro)}
 .b-ghost{border-color:transparent; background:none}
 .b-ghost:hover{background:var(--surface-2)}
+.b-engr{flex:none; width:48px; height:48px; min-height:48px; padding:0; display:grid; place-items:center; color:var(--ink-2); border-radius:12px; margin-right:-6px}
+.b-engr:hover{color:var(--ink)}
 
 /* seletor de duas vias: mostra as duas opções e qual está valendo */
 .seg{
@@ -1432,7 +1434,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-29 · 17";
+const VERSAO_APP = "2026-09-29 · 18";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -2928,8 +2930,14 @@ function barraTopo(sub, voltar){
     + '<div class="topo-tit"><b>'+esc(voltar?sub.t:"Caderneta de Campo")+'</b>'
     + (voltar ? '<span>'+esc(sub.s)+'</span>' : '')+'</div>'
     + '<div class="salvo" title="'+(PERSIST.erro?esc(PERSIST.erro):"")+'">'+statusHtml()+'</div>'
-    + (voltar ? '' : '<button class="b b-s b-ghost" data-acao="tela-sync" aria-label="Sincronização">'
-        + '&#9881;</button>')
+    /* Engrenagem desenhada, e não o caractere ⚙: o caractere saía com 12 px e
+       mudava de cara de um aparelho para outro. 48 px de área de toque é o
+       mínimo confortável para o dedo. */
+    + (voltar ? '' : '<button class="b b-ghost b-engr" data-acao="tela-sync" aria-label="Configurações e sincronização" title="Configurações">'
+        + '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" '
+        + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/>'
+        + '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+        + '</button>')
     + '</div>';
 }
 /* Duas informações diferentes, e a ordem importa: primeiro se o dado está seguro
