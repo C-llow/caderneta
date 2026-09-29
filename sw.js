@@ -5,15 +5,15 @@
    Os DADOS do caderno não passam por aqui — moram no IndexedDB, que é do app.
    Este arquivo cuida só do "programa", não do que você escreveu nele. */
 
-const VERSAO = "caderneta-v3";
+const VERSAO = "caderneta-v4";
 const ARQUIVOS = [
   ".",
   "index.html",
   "manifest.webmanifest",
-  "icone-192.png",
-  "icone-512.png",
-  "icone-mask-192.png",
-  "icone-mask-512.png"
+  "icone-192-v3.png",
+  "icone-512-v3.png",
+  "icone-mask-192-v3.png",
+  "icone-mask-512-v3.png"
 ];
 
 self.addEventListener("install", ev=>{
@@ -71,6 +71,21 @@ self.addEventListener("fetch", ev=>{
           return r;
         })
         .catch(()=>caches.match("index.html").then(r=>r || caches.match(".")))
+    );
+    return;
+  }
+
+  /* O manifesto também vai à rede primeiro. É por ele que o Chrome descobre que
+     o ícone ou o nome do app mudaram; servido da cópia guardada, o aparelho
+     nunca ficava sabendo — foi o que segurou o ícone novo em 29/09. */
+  if(url.pathname.endsWith("/manifest.webmanifest")){
+    ev.respondWith(
+      fetch(req, {cache:"no-cache"})
+        .then(r=>{
+          if(r && r.ok){ const copia = r.clone(); caches.open(VERSAO).then(c=>c.put(req, copia)).catch(()=>{}); }
+          return r;
+        })
+        .catch(()=>caches.match(req))
     );
     return;
   }

@@ -4,8 +4,8 @@
 <meta name="theme-color" content="#1E7B3C">
 <meta name="description" content="Ensaios agronômicos: protocolo, croqui, avaliações, fotos por tratamento e análise estatística. Funciona sem internet.">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icone-192.png" sizes="192x192">
-<link rel="apple-touch-icon" href="icone-192.png">
+<link rel="icon" href="icone-192-v3.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icone-192-v3.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Caderneta">
@@ -100,8 +100,11 @@ a{color:var(--accent)}
 .b-x:hover{background:var(--erro-soft); border-color:var(--erro); color:var(--erro)}
 .b-ghost{border-color:transparent; background:none}
 .b-ghost:hover{background:var(--surface-2)}
-.b-engr{flex:none; width:48px; height:48px; min-height:48px; padding:0; display:grid; place-items:center; color:var(--ink-2); border-radius:12px; margin-right:-6px}
-.b-engr:hover{color:var(--ink)}
+/* Botões de ícone da barra do topo (voltar, engrenagem): 48 px de toque. */
+.b-topo{flex:none; width:48px; height:48px; min-height:48px; padding:0; display:grid; place-items:center; color:var(--ink-2); border-radius:12px}
+.b-topo:hover{color:var(--ink)}
+.b-engr{margin-right:-6px}
+.b-voltar{margin-left:-8px}
 
 /* seletor de duas vias: mostra as duas opções e qual está valendo */
 .seg{
@@ -1434,7 +1437,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-29 · 18";
+const VERSAO_APP = "2026-09-29 · 19";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -2923,7 +2926,10 @@ function render(){
 function barraTopo(sub, voltar){
   const b = tamanhoEstimado(), lim = limiteBytes(), pc = Math.min(100, 100*b/lim);
   return '<div class="topo">'
-    + (voltar ? '<button class="b b-ghost b-s" data-acao="home" aria-label="Voltar">&#8592;</button>' : '')
+    + (voltar ? '<button class="b b-ghost b-topo b-voltar" data-acao="home" aria-label="Voltar para os ensaios" title="Voltar">'
+        + '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.2" '
+        + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>'
+        + '</button>' : '')
     /* Sem subtítulo na tela inicial: o que havia ali era um texto que eu tinha
        inventado, e trocá-lo por uma contagem só encheu linguiça. Dentro de um
        ensaio o subtítulo diz cultura, cultivar e local — aí ele informa. */
@@ -2933,7 +2939,7 @@ function barraTopo(sub, voltar){
     /* Engrenagem desenhada, e não o caractere ⚙: o caractere saía com 12 px e
        mudava de cara de um aparelho para outro. 48 px de área de toque é o
        mínimo confortável para o dedo. */
-    + (voltar ? '' : '<button class="b b-ghost b-engr" data-acao="tela-sync" aria-label="Configurações e sincronização" title="Configurações">'
+    + (voltar ? '' : '<button class="b b-ghost b-topo b-engr" data-acao="tela-sync" aria-label="Configurações e sincronização" title="Configurações">'
         + '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.9" '
         + 'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/>'
         + '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
