@@ -43,6 +43,17 @@ self.addEventListener("fetch", ev=>{
   const url = new URL(req.url);
   /* Chamadas ao Supabase nunca vêm do cache: dado de sincronização velho é pior
      que nenhum. Sem rede, elas falham — e o app já sabe lidar com isso. */
+  /* Exceção: o leitor de PDF (pdf.js) vem do cdnjs, numa versão fixa que nunca
+     muda. Guardado na primeira vez, o relatório abre no celular sem sinal. */
+  if(url.hostname === "cdnjs.cloudflare.com" && url.pathname.indexOf("/ajax/libs/pdf.js/") === 0){
+    ev.respondWith(
+      caches.open(VERSAO).then(c=>c.match(req).then(guardado=>guardado || fetch(req).then(r=>{
+        if(r && r.ok) c.put(req, r.clone()).catch(()=>{});
+        return r;
+      })))
+    );
+    return;
+  }
   if(url.origin !== self.location.origin) return;
 
   /* Navegação (abrir o app): tenta a rede para pegar uma versão nova, e cai na

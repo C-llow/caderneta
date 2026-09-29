@@ -370,6 +370,23 @@ table.protocolo-tab tbody tr:last-child td{border-bottom:0}
   .modal{border-radius:var(--r)}
 }
 .modal h2{margin-bottom:16px}
+/* Relatório final: o cartão inteiro é o botão de abrir. */
+.pdf-card{padding:0; overflow:hidden}
+.pdf-abrir{display:flex; align-items:center; gap:14px; width:100%; padding:14px 16px; background:none; border:0; color:inherit; text-align:left; cursor:pointer; font:inherit}
+.pdf-abrir:hover{background:var(--surface-2)}
+.pdf-abrir:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+.pdf-icone{flex:none; width:44px; height:54px; border-radius:6px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent-line); font:700 .72rem "IBM Plex Mono",monospace; letter-spacing:.04em}
+.pdf-nome{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.95rem}
+.pdf-meta{display:block; font-size:.76rem; color:var(--muted); margin-top:3px}
+.pdf-seta{flex:none; font-size:1.6rem; color:var(--muted)}
+.pdf-edicao{display:flex; flex-wrap:wrap; gap:12px; padding:12px 16px 14px; border-top:1px solid var(--line); background:var(--surface-2)}
+/* Janela de leitura: ocupa quase a tela toda, páginas roláveis por dentro. */
+.modal.modal-pdf{max-width:980px; width:100%; height:94vh; max-height:94vh; display:flex; flex-direction:column; padding:12px; overflow:hidden}
+.pdf-topo{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:0 2px 10px}
+.pdf-corpo{flex:1; min-height:0; overflow:auto; background:var(--surface-3); border-radius:var(--r-sm); display:flex; flex-direction:column; align-items:center; gap:8px; padding:8px}
+.pdf-corpo iframe{width:100%; height:100%; border:0; flex:1; background:#fff}
+.pdf-corpo canvas{background:#fff; box-shadow:0 1px 6px rgba(0,0,0,.25); max-width:100%}
+.pdf-aviso{color:var(--muted); font-size:.88rem; padding:24px 12px; text-align:center; max-width:48ch}
 
 .aviso{padding:11px 13px; border-radius:var(--r-sm); font-size:.82rem; display:flex; gap:9px; align-items:flex-start; line-height:1.45}
 .aviso-w{background:var(--alerta-soft); color:var(--alerta); border:1px solid var(--alerta)}
@@ -502,6 +519,8 @@ function migrar(){
     if(typeof e.controle !== "number") e.controle = 0;
     if(typeof e.travado !== "boolean") e.travado = false;
     if(!Array.isArray(e.fatores)) e.fatores = [];
+    if(!Array.isArray(e.relatorios)) e.relatorios = [];     // PDFs do relatório final
+    if(typeof e.coordenadas !== "string") e.coordenadas = "";
     /* Fatores também travam depois de salvos. Começa travado quem já tem fator
        completo (nome e dois níveis com nome); o resto começa aberto. */
     if(typeof e.fatoresTravado !== "boolean"){
@@ -1413,7 +1432,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-29 · 16";
+const VERSAO_APP = "2026-09-29 · 17";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -1516,6 +1535,25 @@ async function descartarAmpliada(id){
   });
 }
 
+/* --- PDFs do relatório final ---
+   Moram na mesma gaveta das fotos, com chave própria ("pdf:" + id), guardados
+   como arquivo inteiro (Blob). Em texto base64, como as fotos, um relatório de
+   10 MB viraria 13 MB. Mesma regra das fotos: `local` só depois de gravado. */
+const chavePdf = id => "pdf:" + id;
+async function gravarPdf(id, blob){
+  if(!BD) BD = await abrirBD();
+  return new Promise((ok, err)=>{
+    const tx = BD.transaction(BD_FOTOS, "readwrite");
+    tx.objectStore(BD_FOTOS).put({pdf:blob}, chavePdf(id));
+    tx.oncomplete = ()=>ok(); tx.onerror = ()=>err(tx.error); tx.onabort = ()=>err(tx.error);
+  });
+}
+async function lerPdf(id){
+  const b = await lerBytesFoto(chavePdf(id));
+  return b && b.pdf ? b.pdf : null;
+}
+function apagarPdfs(ids){ return apagarBytesFotos((ids||[]).map(chavePdf)); }
+
 /* Uma vez só, na primeira abertura desta versão: tira as imagens de dentro do
    caderno e põe na gaveta. Tudo numa transação ÚNICA sobre as duas gavetas —
    ou as fotos entram e o caderno emagrece, ou nada muda. Não existe meio-termo
@@ -1606,6 +1644,11 @@ function tamanhoEstimado(){ return USO; }
 let QUOTA = 512*1024*1024;
 medirUso();
 function limiteBytes(){ return QUOTA; }
+/* Para arquivos (PDF): um relatório de 800 KB não pode aparecer como "1 MB" nem "0 MB". */
+function tamanhoArquivo(b){
+  b = Number(b)||0;
+  return b < 1048576 ? Math.max(1, Math.round(b/1024))+" KB" : (b/1048576).toFixed(1).replace(".",",")+" MB";
+}
 function mb(b){
   return b >= 1073741824 ? (b/1073741824).toFixed(1).replace(".",",")+" GB"
                          : (b/1048576).toFixed(0)+" MB";
@@ -1795,12 +1838,59 @@ async function supaApagarFoto(expId, fotoId, tipo){
   if(!r.ok && r.status !== 404) throw new Error("HTTP "+r.status);
   return true;
 }
+/* O PDF mora numa pasta própria, fora da pasta do ensaio: mover o relatório
+   para outro ensaio muda só a ficha, sem subir o arquivo de novo. */
+function caminhoPdf(id){ return "/storage/v1/object/"+BALDE+"/relatorios/"+id+".pdf"; }
+async function supaSubirPdf(id, blob){
+  const r = await supaArquivo(caminhoPdf(id), {
+    method:"POST", headers:{"Content-Type":"application/pdf", "x-upsert":"true"}, body: blob
+  });
+  if(!r.ok && r.status !== 409){
+    const t = await r.text().catch(()=>"");
+    const e = new Error(t || ("HTTP "+r.status)); e.status = r.status; throw e;
+  }
+  return true;
+}
+async function supaBaixarPdf(id){
+  if(!syncConfig()) return null;
+  const r = await supaArquivo(caminhoPdf(id));
+  if(!r.ok) return null;
+  const b = await r.blob();
+  return new Blob([b], {type:"application/pdf"});
+}
+async function supaApagarPdf(id){
+  const r = await supaArquivo(caminhoPdf(id), {method:"DELETE"});
+  if(!r.ok && r.status !== 404) throw new Error("HTTP "+r.status);
+  return true;
+}
+function pdfPendente(r){ return !r.remota && r.local; }
+/* Traz o PDF: primeiro da gaveta, depois do servidor. O que desce fica na
+   gaveta, e — como nas fotos — sem marcarSujo, porque baixar não é editar. */
+async function garantirPdf(r){
+  try{
+    if(r.local){ const b = await lerPdf(r.id); if(b) return b; }
+    if(r.remota && syncPronto() && navigator.onLine){
+      const b = await supaBaixarPdf(r.id);
+      if(b){
+        try{ await gravarPdf(r.id, b); if(!r.local){ r.local = true; await gravarLocal(ST); } }
+        catch(err){ /* sem espaço: abre agora, sem guardar */ }
+        return b;
+      }
+    }
+  }catch(err){}
+  return null;
+}
+
 /* Apagar a foto no aparelho não apaga o arquivo no servidor — e sem isto ele
    ficaria ocupando o balde para sempre. A ordem vai para uma fila, porque quem
    apaga uma foto costuma estar no campo, sem sinal. */
 function enfileirarExclusaoFoto(expId, fotoId){
   if(!Array.isArray(ST.fotosParaApagar)) ST.fotosParaApagar = [];
   ST.fotosParaApagar.push({exp:expId, foto:fotoId});
+}
+function enfileirarExclusaoPdf(id){
+  if(!Array.isArray(ST.fotosParaApagar)) ST.fotosParaApagar = [];
+  ST.fotosParaApagar.push({pdf:id});
 }
 async function limparFotosApagadas(){
   const fila = Array.isArray(ST.fotosParaApagar) ? ST.fotosParaApagar : [];
@@ -1809,6 +1899,7 @@ async function limparFotosApagadas(){
   let n = 0;
   for(const item of fila){
     try{
+      if(item.pdf){ await supaApagarPdf(item.pdf); n++; continue; }
       await supaApagarFoto(item.exp, item.foto, "t");
       await supaApagarFoto(item.exp, item.foto, "");
       n++;
@@ -1949,6 +2040,7 @@ function semFotos(e){
        colega acharia que tem na gaveta uma foto que nunca baixou. */
     delete f.local; delete f.soMini;
   });
+  (c.relatorios||[]).forEach(r=>{ delete r.local; });   // idem para o PDF
   return c;
 }
 /* Foto tirada aqui que ainda não chegou ao servidor. Os bytes podem estar na
@@ -2006,6 +2098,7 @@ async function sincronizar(silencioso){
         if(i>=0 && (r.atualizado||"") > localAtual){
           // as imagens dele saem da gaveta junto, senão ficariam ocupando espaço para sempre
           apagarBytesFotos((ST.experimentos[i].fotos||[]).map(f=>f.id));
+          apagarPdfs((ST.experimentos[i].relatorios||[]).map(x=>x.id));
           ST.experimentos.splice(i,1); baixados++;
         }
         return;
@@ -2027,7 +2120,9 @@ async function sincronizar(silencioso){
           if(f.media || f.thumb || f.local)
             guardadas[f.id] = {media:f.media, thumb:f.thumb, local:f.local, soMini:f.soMini};
         });
+        const pdfsAqui = new Set((ST.experimentos[i].relatorios||[]).filter(x=>x.local).map(x=>x.id));
         ST.experimentos[i] = r.dados;
+        (ST.experimentos[i].relatorios||[]).forEach(x=>{ if(pdfsAqui.has(x.id)) x.local = true; });
         (ST.experimentos[i].fotos||[]).forEach(f=>{
           const g = guardadas[f.id];
           if(!g) return;
@@ -2046,7 +2141,7 @@ async function sincronizar(silencioso){
        falhou (sinal caiu no meio) nunca mais seria tentada: o carimbo já estaria
        em dia, o ensaio sairia desta lista, e a imagem ficaria presa no aparelho
        para sempre — visível só para quem a tirou. */
-    const temFotoPendente = e => (e.fotos||[]).some(fotoPendente);
+    const temFotoPendente = e => (e.fotos||[]).some(fotoPendente) || (e.relatorios||[]).some(pdfPendente);
     const subir = ST.experimentos.filter(e=>{
       const r = porId[e.id];
       return !r || (e.atualizado||"") > (r.atualizado||"") || temFotoPendente(e);
@@ -2056,7 +2151,7 @@ async function sincronizar(silencioso){
          estar guardada lá é que o ensaio a declara como `remota` — na ordem
          inversa, outro aparelho leria a referência de uma foto inexistente. */
       let enviadas = 0, falhas = 0;
-      SYNC.erroFoto = null;
+      SYNC.erroFoto = null; SYNC.erroPdf = null;
       for(const e of subir){
         for(const f of (e.fotos||[])){
           if(!fotoPendente(f)) continue;
@@ -2076,6 +2171,18 @@ async function sincronizar(silencioso){
             if(!SYNC.erroFoto)
               SYNC.erroFoto = (err && err.message) ? String(err.message).slice(0,140)
                                                    : "não consegui enviar a foto";
+          }
+        }
+        // o PDF do relatório, pelo mesmo princípio: arquivo primeiro, ficha depois
+        for(const r of (e.relatorios||[])){
+          if(!pdfPendente(r)) continue;
+          try{
+            const b = await lerPdf(r.id);
+            if(!b) continue;
+            await supaSubirPdf(r.id, b);
+            r.remota = true;
+          }catch(err){
+            SYNC.erroPdf = (err && err.message) ? String(err.message).slice(0,140) : "não consegui enviar o PDF";
           }
         }
       }
@@ -2122,8 +2229,12 @@ async function sincronizar(silencioso){
        silenciosa: é o aviso que faltava quando as fotos sumiam sem explicação. */
     const pendentes = ST.experimentos.reduce((a,e)=>
       a + (e.fotos||[]).filter(fotoPendente).length, 0);
+    const pdfsPendentes = ST.experimentos.reduce((a,e)=>a + (e.relatorios||[]).filter(pdfPendente).length, 0);
     if(pendentes && SYNC.erroFoto){
       toast(pendentes+(pendentes===1?" foto não subiu":" fotos não subiram")+": "+SYNC.erroFoto);
+    }
+    else if(pdfsPendentes && SYNC.erroPdf){
+      toast("O PDF do relatório não subiu (continua guardado aqui): "+SYNC.erroPdf);
     }
     else if(!silencioso || baixados || subir.length){
       const fs = SYNC.fotosEnviadas || 0; SYNC.fotosEnviadas = 0;
@@ -2368,6 +2479,7 @@ async function montarBackup(comFotos){
     delete f.media; delete f.thumb;
     delete f.local; delete f.soMini;     // marcas deste aparelho, sem sentido em outro
   }));
+  (copia.experimentos||[]).forEach(e=>(e.relatorios||[]).forEach(r=>{ delete r.local; }));
 
   const arquivos = [];
   let nFotos = 0, faltaram = 0;
@@ -2405,6 +2517,16 @@ async function montarBackup(comFotos){
         const b = dataUrlParaBlob(dados);
         arquivos.push({nome, dados: new Uint8Array(await b.arrayBuffer())});
         nFotos++;
+      }
+      // o relatório final vai junto, como PDF comum, na pasta do ensaio
+      for(const r of (e.relatorios||[])){
+        const b = await garantirPdf(r);
+        if(!b){ faltaram++; continue; }
+        const nome = "relatorios/"+pastaE+"/"+nomeSeguro((r.nome||"relatorio").replace(/\.pdf$/i,""))
+                   + "-" + r.id.slice(-4) + ".pdf";
+        const cr = ce && (ce.relatorios||[]).find(x=>x.id===r.id);
+        if(cr) cr.arquivo = nome;
+        arquivos.push({nome, dados: new Uint8Array(await b.arrayBuffer())});
       }
     }
   }
@@ -2563,6 +2685,21 @@ async function restaurarBackup(arquivo){
     }
   }
 
+  // PDFs do relatório: voltam por nome, como as fotos
+  const pdfsComArquivo = new Set();
+  for(const e of dados.experimentos){
+    for(const r of (e.relatorios||[])){
+      delete r.local;
+      const bruto = r.arquivo && conteudo[r.arquivo];
+      delete r.arquivo;
+      if(!bruto) continue;
+      try{
+        await gravarPdf(r.id, new Blob([bruto], {type:"application/pdf"}));
+        r.local = true; delete r.remota; pdfsComArquivo.add(r.id);
+      }catch(err){}
+    }
+  }
+
   const idsComImagem = new Set();
   dados.experimentos.forEach(e=>(e.fotos||[]).forEach(f=>{ if(f.local) idsComImagem.add(f.id); }));
 
@@ -2574,6 +2711,10 @@ async function restaurarBackup(arquivo){
     const orfas = [];
     ST.experimentos.forEach(e=>(e.fotos||[]).forEach(f=>{ if(!novos.has(f.id)) orfas.push(f.id); }));
     await apagarBytesFotos(orfas);
+    const pdfsNovos = new Set();
+    dados.experimentos.forEach(e=>(e.relatorios||[]).forEach(r=>pdfsNovos.add(r.id)));
+    await apagarPdfs([].concat(...ST.experimentos.map(e=>(e.relatorios||[]).map(r=>r.id)))
+                       .filter(id=>!pdfsNovos.has(id)));
     ST.experimentos = dados.experimentos;
     if(Array.isArray(dados.grupos))    ST.grupos    = dados.grupos;
     if(Array.isArray(dados.modelos))   ST.modelos   = dados.modelos;
@@ -2593,6 +2734,7 @@ async function restaurarBackup(arquivo){
   /* Mesmo quando a versão deste aparelho venceu, a imagem que veio do arquivo
      já está na gaveta, com o mesmo id: a foto passa a saber disso. */
   ST.experimentos.forEach(e=>(e.fotos||[]).forEach(f=>{ if(idsComImagem.has(f.id)) f.local = true; }));
+  ST.experimentos.forEach(e=>(e.relatorios||[]).forEach(r=>{ if(pdfsComArquivo.has(r.id)) r.local = true; }));
 
   migrar(); marcarSujo(); render(); medirUso();
   toast(resumoMsg + " · " + restauradas + " foto(s) com imagem"
@@ -2690,7 +2832,8 @@ async function salvarNoCelular(e, f){
 function novoExperimento(dados){
   const e = {
     id:uid(), nome:dados.nome, cultura:dados.cultura||"Soja", cultivar:dados.cultivar||"",
-    local:dados.local||"", safra:dados.safra||"25/26", responsavel:dados.responsavel||"",
+    local:dados.local||"", coordenadas:(dados.coordenadas||"").trim(),
+    safra:dados.safra||"25/26", responsavel:dados.responsavel||"", relatorios:[],
     grupoId:dados.grupoId||"", aplicacoes:[], aplicTravado:false,
     esquema:"simples", croquiTravado:false, sessoesFoto:[],
     delineamento:dados.delineamento||"DBC", teste:dados.teste||"tukey", nRep:Number(dados.nRep)||4,
@@ -2762,6 +2905,14 @@ function render(){
     if(alvo){ alvo.focus(); try{ alvo.setSelectionRange(selIni, selIni); }catch(err){} }
   }
   atualizarStatus();
+  /* Com seis abas, no celular as últimas ficam fora da barra. A aba aberta
+     é trazida para a vista — só a barra rola, a página não se mexe. */
+  const barra = app.querySelector(".abas"), ativa = barra && barra.querySelector('[aria-selected="true"]');
+  if(ativa){
+    const ra = ativa.getBoundingClientRect(), rb = barra.getBoundingClientRect();
+    if(ra.right > rb.right) barra.scrollLeft += ra.right - rb.right + 16;
+    else if(ra.left < rb.left) barra.scrollLeft -= rb.left - ra.left + 16;
+  }
   /* Depois da tela montada, busca as miniaturas das fotos que vieram de outro
      aparelho. Fora do caminho do desenho: a tela não espera pela rede. */
   carregarMiniaturasPendentes();
@@ -3188,13 +3339,14 @@ function cartaoExperimento(e, so){
 
 /* --------- EXPERIMENTO --------- */
 function telaExperimento(e){
-  const abas = [["protocolo","Protocolo"],["tratamentos","Tratamentos"],["avaliacoes","Avaliações"],["fotos","Fotos"],["analise","Análise"]];
+  const abas = [["protocolo","Protocolo"],["tratamentos","Tratamentos"],["avaliacoes","Avaliações"],["fotos","Fotos"],["analise","Análise"],["relatorio","Relatório"]];
   let s = barraTopo({t:e.nome, s:[e.cultura,e.cultivar,e.local].filter(Boolean).join(" · ")||"Experimento"}, true);
   s += '<div class="abas" role="tablist">';
   abas.forEach(a=>{
     s += '<button class="aba" role="tab" aria-selected="'+(TELA.aba===a[0])+'" data-acao="aba" data-aba="'+a[0]+'">'+a[1]
       + (a[0]==="fotos" && e.fotos.length ? ' <span style="opacity:.6">'+e.fotos.length+'</span>' : '')
       + (a[0]==="avaliacoes" && e.avaliacoes.length ? ' <span style="opacity:.6">'+e.avaliacoes.length+'</span>' : '')
+      + (a[0]==="relatorio" && (e.relatorios||[]).length ? ' <span style="opacity:.6">'+e.relatorios.length+'</span>' : '')
       + '</button>';
   });
   s += '</div><div class="wrap">';
@@ -3203,7 +3355,195 @@ function telaExperimento(e){
   if(TELA.aba==="avaliacoes")  s += abaAvaliacoes(e);
   if(TELA.aba==="fotos")       s += abaFotos(e);
   if(TELA.aba==="analise")     s += abaAnalise(e);
+  if(TELA.aba==="relatorio")   s += abaRelatorio(e);
   return s + '</div>';
+}
+
+/* --------- RELATÓRIO FINAL --------- */
+/* O PDF do relatório pronto, guardado junto do ensaio. Fica "fechado" por
+   padrão: tocar abre a leitura. Trocar, mover para outro ensaio ou remover
+   só aparece depois de Editar — carregar no ensaio errado se corrige, mas um
+   toque distraído não apaga o relatório. */
+const PDF_MAX = 50*1024*1024;      // teto por arquivo do plano gratuito do Supabase
+function abaRelatorio(e){
+  const so = PERSIST.leitura;
+  const rels = e.relatorios || [];
+  const editando = !so && TELA.editarPdf === e.id;
+  let s = '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Relatório final</div>'
+    + '<h2>'+(rels.length ? (rels.length===1 ? 'PDF do relatório' : rels.length+' PDFs') : 'Relatório final')+'</h2></div>'
+    + (so || !rels.length ? '' : (editando
+        ? '<button class="b b-s b-p" data-acao="fim-editar-pdf">Concluir</button>'
+        : '<button class="b b-s" data-acao="editar-pdf">Editar</button>'))
+    + '</div>';
+
+  if(!rels.length){
+    s += '<div class="card vazio" style="padding:28px 20px">'
+      + '<p style="margin-bottom:16px">Quando o trabalho terminar, carregue aqui o PDF do relatório final. '
+      + 'Ele fica guardado com o ensaio, sobe para a equipe e abre em qualquer aparelho.</p>'
+      + (so ? '' : '<button class="b b-p b-g" data-acao="carregar-pdf">+ Carregar PDF</button>')
+      + '</div></div>';
+    return s;
+  }
+
+  const outros = ST.experimentos.filter(x=>x.id!==e.id);
+  s += '<div class="grid" style="gap:10px">';
+  rels.forEach(r=>{
+    const onde = r.local ? (r.remota ? 'neste aparelho e na equipe' : 'só neste aparelho — sobe na próxima sincronização')
+                         : (r.remota ? 'na equipe — baixa ao abrir' : 'indisponível');
+    s += '<div class="card card-p pdf-card">'
+      + '<button class="pdf-abrir" data-acao="ver-pdf" data-id="'+r.id+'" aria-label="Abrir '+esc(r.nome)+'">'
+      + '<span class="pdf-icone" aria-hidden="true">PDF</span>'
+      + '<span style="min-width:0;flex:1"><b class="pdf-nome">'+esc(r.nome||"relatorio.pdf")+'</b>'
+      + '<span class="pdf-meta">'+tamanhoArquivo(r.tamanho)+' · carregado em '+dataBr((r.enviado||"").slice(0,10))+' · '+onde+'</span></span>'
+      + '<span class="pdf-seta" aria-hidden="true">&rsaquo;</span></button>';
+    if(editando){
+      s += '<div class="pdf-edicao">'
+        + '<div class="campo" style="flex:1 1 220px;min-width:0"><label>Mover para outro ensaio</label>'
+        + '<div class="linha" style="gap:6px;flex-wrap:nowrap">'
+        + '<select id="mover-'+r.id+'" style="flex:1;min-width:0;border:1px solid var(--line-2);background:var(--surface);'
+        + 'border-radius:var(--r-sm);padding:8px;min-height:38px;font-size:.86rem">'
+        + '<option value="">— escolha o ensaio —</option>'
+        + outros.map(x=>'<option value="'+x.id+'">'+esc(x.nome)+'</option>').join("")
+        + '</select><button class="b b-s" data-acao="mover-pdf" data-id="'+r.id+'">Mover</button></div></div>'
+        + '<div class="linha" style="gap:6px;align-self:flex-end">'
+        + '<button class="b b-s" data-acao="trocar-pdf" data-id="'+r.id+'">Trocar arquivo</button>'
+        + '<button class="b b-s b-perigo b-ghost" data-acao="del-pdf" data-id="'+r.id+'">Remover</button></div>'
+        + '</div>';
+    }
+    s += '</div>';
+  });
+  s += '</div>';
+  if(editando) s += '<button class="b b-s" data-acao="carregar-pdf" style="margin-top:10px">+ Carregar outro PDF</button>';
+  s += '</div>';
+  // no celular a leitura usa o pdf.js: já deixa guardado enquanto há sinal
+  setTimeout(prepararLeitorPdf, 800);
+  return s;
+}
+
+/* Escolhe o arquivo e devolve só se for PDF e couber no servidor. */
+function escolherPdf(){
+  return new Promise(ok=>{
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "application/pdf,.pdf";
+    inp.addEventListener("change", ()=>{
+      const f = inp.files && inp.files[0];
+      if(!f){ ok(null); return; }
+      if(!/\.pdf$/i.test(f.name) && f.type !== "application/pdf"){ toast("Escolha um arquivo PDF"); ok(null); return; }
+      if(f.size > PDF_MAX){ toast("Esse PDF tem "+mb(f.size)+" — o limite é 50 MB por arquivo"); ok(null); return; }
+      ok(f);
+    });
+    inp.click();
+  });
+}
+async function carregarPdf(e, substituir){
+  const f = await escolherPdf();
+  if(!f) return;
+  const r = {id:uid(), nome:f.name, tamanho:f.size, enviado:new Date().toISOString()};
+  try{ await gravarPdf(r.id, new Blob([f], {type:"application/pdf"})); }
+  catch(err){ toast("Não consegui guardar o PDF neste aparelho — falta espaço?"); return; }
+  r.local = true;
+  if(substituir){
+    // arquivo novo com id novo: quem já tinha baixado o antigo não fica com ele por engano
+    const i = e.relatorios.findIndex(x=>x.id===substituir.id);
+    if(substituir.remota) enfileirarExclusaoPdf(substituir.id);
+    apagarPdfs([substituir.id]);
+    if(i>=0) e.relatorios[i] = r; else e.relatorios.push(r);
+  } else {
+    e.relatorios.push(r);
+  }
+  marcarSujo(); render(); agendarSync();
+  toast(substituir ? "PDF trocado" : "PDF guardado no ensaio");
+}
+
+/* --- leitura do PDF ---
+   No PC o Chrome/Edge tem leitor próprio e o PDF abre num quadro. No Android
+   não: dentro de um quadro ele só oferece baixar. Lá quem desenha as páginas
+   é o pdf.js, carregado só na primeira leitura e guardado para abrir sem sinal. */
+const PDFJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/";
+let PDFJS = null, PDF_URL = null;
+function leitorNativo(){ return navigator.pdfViewerEnabled === true; }
+async function carregarPdfJs(){
+  if(PDFJS) return PDFJS;
+  const lib = await import(PDFJS_BASE + "pdf.min.mjs");
+  /* O worker vem de outro endereço; como Blob daqui ele passa a ser "da casa"
+     e o navegador aceita criá-lo — e o fetch passa pelo service worker, que o
+     guarda para a próxima vez sem sinal. */
+  const cod = await (await fetch(PDFJS_BASE + "pdf.worker.min.mjs")).text();
+  lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([cod], {type:"text/javascript"}));
+  PDFJS = lib;
+  return lib;
+}
+let LEITOR_PREPARADO = false;
+function prepararLeitorPdf(){
+  if(LEITOR_PREPARADO || leitorNativo() || !navigator.onLine) return;
+  LEITOR_PREPARADO = true;
+  // só busca: o service worker guarda; nada roda agora
+  fetch(PDFJS_BASE + "pdf.min.mjs").catch(()=>{ LEITOR_PREPARADO = false; });
+  fetch(PDFJS_BASE + "pdf.worker.min.mjs").catch(()=>{ LEITOR_PREPARADO = false; });
+}
+async function abrirPdf(e, r){
+  toast("Abrindo o PDF…");
+  const blob = await garantirPdf(r);
+  if(!blob){
+    toast(r.remota ? "Sem sinal para buscar este PDF — ele ainda não está neste aparelho"
+                   : "O arquivo deste PDF não está neste aparelho");
+    return;
+  }
+  if(PDF_URL) URL.revokeObjectURL(PDF_URL);
+  PDF_URL = URL.createObjectURL(blob);
+  const podeCompartilhar = (()=>{ try{
+    return !!(navigator.canShare && navigator.canShare({files:[new File([blob], r.nome||"relatorio.pdf", {type:"application/pdf"})]}));
+  }catch(err){ return false; } })();
+  const d = abrirModal('<div class="pdf-topo"><b class="pdf-nome" style="flex:1;min-width:0">'+esc(r.nome||"relatorio.pdf")+'</b>'
+    + '<button class="b b-s b-p" data-acao="baixar-pdf" data-id="'+r.id+'">&#11015; Baixar PDF</button>'
+    + (podeCompartilhar ? '<button class="b b-s" data-acao="compartilhar-pdf" data-id="'+r.id+'">Compartilhar</button>' : '')
+    + '<button class="b b-s" data-acao="fechar" aria-label="Fechar">&times;</button></div>'
+    + '<div class="pdf-corpo" id="pdf-corpo"></div>');
+  d.querySelector(".modal").classList.add("modal-pdf");
+  const corpo = d.querySelector("#pdf-corpo");
+  if(leitorNativo()){
+    corpo.innerHTML = '<iframe src="'+PDF_URL+'#view=FitH" title="'+esc(r.nome||"PDF")+'"></iframe>';
+    return;
+  }
+  corpo.innerHTML = '<p class="pdf-aviso">Carregando páginas…</p>';
+  try{
+    const lib = await carregarPdfJs();
+    const doc = await lib.getDocument({data: new Uint8Array(await blob.arrayBuffer())}).promise;
+    if(!corpo.isConnected) return;
+    corpo.innerHTML = '';
+    const larg = Math.max(280, corpo.clientWidth - 16);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // uma página de cada vez: um relatório de 40 páginas não trava o celular
+    for(let n = 1; n <= doc.numPages; n++){
+      if(!corpo.isConnected) break;
+      const pg = await doc.getPage(n);
+      const v1 = pg.getViewport({scale:1});
+      const vp = pg.getViewport({scale: larg / v1.width * dpr});
+      const cv = document.createElement("canvas");
+      cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+      cv.style.width = larg + "px"; cv.style.height = Math.floor(vp.height / dpr) + "px";
+      corpo.appendChild(cv);
+      await pg.render({canvasContext: cv.getContext("2d"), viewport: vp}).promise;
+    }
+  }catch(err){
+    if(corpo.isConnected){
+      corpo.innerHTML = '<p class="pdf-aviso">Não deu para mostrar a prévia aqui'
+        + (navigator.onLine ? '' : ' — o leitor precisa de internet na primeira vez')
+        + '. Use <b>Baixar PDF</b> para abrir no leitor do aparelho.</p>';
+    }
+  }
+}
+function baixarPdf(r){
+  if(!PDF_URL) return;
+  const a = document.createElement("a");
+  a.href = PDF_URL; a.download = r.nome || "relatorio.pdf";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Baixando para a pasta de downloads");
+}
+async function compartilharPdf(r){
+  const b = await garantirPdf(r); if(!b) return;
+  try{ await navigator.share({files:[new File([b], r.nome||"relatorio.pdf", {type:"application/pdf"})], title:r.nome}); }
+  catch(err){ /* desistiu */ }
 }
 
 function abaProtocolo(e){
@@ -3217,7 +3557,7 @@ function abaProtocolo(e){
     + (so?'':'<button class="b b-s" data-acao="editar-exp">Editar ficha</button>')+'</div>'
     + '<div class="card card-p"><div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">'
     + ficha("Cultura",e.cultura) + ficha("Cultivar",e.cultivar) + ficha("Local",e.local)
-    + ficha("Safra",e.safra)
+    + fichaCoords(e.coordenadas) + ficha("Safra",e.safra)
     + ficha("Grupo", (ST.grupos.find(g=>g.id===e.grupoId)||{}).nome || "—")
     + ficha("Delineamento",(DELINS[e.delineamento]||{}).curto||e.delineamento)
     + ficha("Comparação de médias",(TESTES[e.teste]||{}).nome||"Tukey")
@@ -3410,6 +3750,35 @@ function conferirCroqui(e){
     vazio:false, preenchidas, total,
     aviso: problemas.length ? esc(problemas.slice(0,4).join(" · ")) : null
   };
+}
+/* Lê "lat, lng" do jeito que as pessoas escrevem: ponto decimal com vírgula
+   separando, ou vírgula decimal com espaço separando. Devolve null se não der
+   para ter certeza — aí a ficha mostra o texto, sem link de mapa. */
+function coordsDe(txt){
+  const s = String(txt||"").trim();
+  // graus, minutos e segundos, como o GPS de mão mostra: 17°47'49"S 50°55'41"O
+  const g = s.match(/^(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:["″]|'')?\s*([NSns])[\s,;]+(\d{1,3})\s*°\s*(\d{1,2})\s*['′]\s*(\d{1,2}(?:[.,]\d+)?)\s*(?:["″]|'')?\s*([LOWElowe])$/);
+  if(g){
+    const dec = (d,mi,se)=>Number(d) + Number(mi)/60 + Number(se.replace(",", "."))/3600;
+    const lat = dec(g[1],g[2],g[3]) * (/[sS]/.test(g[4]) ? -1 : 1);
+    const lng = dec(g[5],g[6],g[7]) * (/[oOwW]/.test(g[8]) ? -1 : 1);
+    if(Math.abs(lat)<=90 && Math.abs(lng)<=180) return {lat:+lat.toFixed(6), lng:+lng.toFixed(6)};
+  }
+  let m = s.match(/^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/)
+       || s.match(/^(-?\d{1,3}(?:[.,]\d+)?)\s*;?\s+(-?\d{1,3}(?:[.,]\d+)?)$/)
+       || s.match(/^(-?\d{1,3}(?:[.,]\d+)?)\s*;\s*(-?\d{1,3}(?:[.,]\d+)?)$/);
+  if(!m) return null;
+  const lat = Number(m[1].replace(",", ".")), lng = Number(m[2].replace(",", "."));
+  if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat)>90 || Math.abs(lng)>180) return null;
+  return {lat, lng};
+}
+function fichaCoords(txt){
+  const c = coordsDe(txt);
+  return '<div><div class="eyebrow" style="margin-bottom:2px">Coordenadas</div>'
+    + '<div style="font-size:.92rem;font-weight:500">'+(esc(txt)||'—')
+    + (c ? ' <a href="https://www.google.com/maps?q='+c.lat+','+c.lng+'" target="_blank" rel="noopener" '
+         + 'style="font-size:.8rem;color:var(--accent);white-space:nowrap">abrir no mapa</a>' : '')
+    + '</div></div>';
 }
 function ficha(rot,val){
   return '<div><div class="eyebrow" style="margin-bottom:2px">'+esc(rot)+'</div>'
@@ -4527,6 +4896,12 @@ function modalExperimento(e){
       + c("Cultura","cultura",v.cultura) + c("Cultivar","cultivar",v.cultivar,"text","Ex.: DM 64E64") + '</div>'
     + '<div class="grid" style="grid-template-columns:1fr 1fr">'
       + c("Local","local",v.local,"text","Fazenda, município") + c("Safra","safra",v.safra) + '</div>'
+    + '<div class="campo"><label>Coordenadas</label>'
+      + '<div class="linha" style="gap:6px;flex-wrap:nowrap">'
+      + '<input name="coordenadas" id="in-coord" value="'+esc(v.coordenadas||"")+'" '
+      + 'placeholder="Ex.: -17.797120, -50.928140" style="flex:1;min-width:0">'
+      + '<button type="button" class="b b-s" data-acao="pegar-gps" style="flex:none">&#128205; GPS</button></div>'
+      + '<span class="dica">Latitude, longitude. Na área do ensaio, toque em GPS para pegar a posição do aparelho.</span></div>'
     + '<div class="campo"><label>Grupo</label><select name="grupoId">'
       + '<option value="">— sem grupo —</option>'
       + ST.grupos.map(g=>'<option value="'+g.id+'"'+((v.grupoId||"")===g.id?" selected":"")+'>'
@@ -4561,6 +4936,7 @@ function modalExperimento(e){
     if(!d.nome || !d.nome.trim()){ toast("Dê um nome ao ensaio"); return; }
     if(e){
       Object.assign(e, {nome:d.nome, cultura:d.cultura, cultivar:d.cultivar, local:d.local,
+        coordenadas:(d.coordenadas||"").trim(),
         safra:d.safra, grupoId:d.grupoId||"", delineamento:d.delineamento, teste:d.teste, nRep:Math.max(2,Number(d.nRep)||e.nRep),
         areaParcela:num(d.areaParcela), vazao:d.vazao, dataPlantio:d.dataPlantio,
         responsavel:d.responsavel});
@@ -4741,7 +5117,8 @@ async function exportarPlanilha(e, ids){
 async function exportar(e){
   let txt = "RELATÓRIO DE ENSAIO — "+e.nome+"\n";
   txt += "=".repeat(60)+"\n\n";
-  txt += "Cultura: "+e.cultura+"\nCultivar: "+e.cultivar+"\nLocal: "+e.local+"\nSafra: "+e.safra+"\n";
+  txt += "Cultura: "+e.cultura+"\nCultivar: "+e.cultivar+"\nLocal: "+e.local+"\n"
+       + (e.coordenadas ? "Coordenadas: "+e.coordenadas+"\n" : "") + "Safra: "+e.safra+"\n";
   txt += "Delineamento: "+((DELINS[e.delineamento]||{}).nome||e.delineamento)
        + " — "+e.tratamentos.length+" tratamentos × "+e.nRep+" repetições\n";
   txt += "Comparação de médias: "+((TESTES[e.teste]||TESTES.tukey).nome)
@@ -4979,6 +5356,63 @@ document.addEventListener("click", async ev=>{
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
   }
+  else if(a==="carregar-pdf"){ carregarPdf(e); }
+  else if(a==="editar-pdf"){ TELA.editarPdf = e.id; render(); }
+  else if(a==="fim-editar-pdf"){ TELA.editarPdf = null; render(); }
+  else if(a==="ver-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    if(r) abrirPdf(e, r);
+  }
+  else if(a==="baixar-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    if(r) baixarPdf(r);
+  }
+  else if(a==="compartilhar-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    if(r) compartilharPdf(r);
+  }
+  else if(a==="trocar-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    if(r) carregarPdf(e, r);
+  }
+  else if(a==="del-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    if(!r) return;
+    if(!await confirmar("Remover <b>"+esc(r.nome)+"</b> deste ensaio? O arquivo sai deste aparelho"
+        + (r.remota ? " e da equipe." : "."))) return;
+    e.relatorios = e.relatorios.filter(x=>x.id!==id);
+    apagarPdfs([id]);
+    if(r.remota) enfileirarExclusaoPdf(id);
+    if(!e.relatorios.length) TELA.editarPdf = null;
+    marcarSujo(); render(); toast("PDF removido");
+  }
+  else if(a==="mover-pdf"){
+    const r = (e.relatorios||[]).find(x=>x.id===id);
+    const sel = document.getElementById("mover-"+id);
+    const dest = sel && ST.experimentos.find(x=>x.id===sel.value);
+    if(!r) return;
+    if(!dest){ toast("Escolha para qual ensaio mover"); return; }
+    if(!await confirmar("Mover <b>"+esc(r.nome)+"</b> para o ensaio <b>"+esc(dest.nome)+"</b>?")) return;
+    e.relatorios = e.relatorios.filter(x=>x.id!==id);
+    if(!Array.isArray(dest.relatorios)) dest.relatorios = [];
+    dest.relatorios.push(r);
+    // os dois ensaios mudaram: os dois precisam de carimbo novo para a sincronização
+    dest.atualizado = new Date().toISOString();
+    if(!e.relatorios.length) TELA.editarPdf = null;
+    marcarSujo(); render(); toast("Movido para "+dest.nome);
+  }
+  else if(a==="pegar-gps"){
+    const inp = document.getElementById("in-coord");
+    if(!navigator.geolocation){ toast("Este aparelho não informa a posição"); return; }
+    toast("Buscando a posição…");
+    navigator.geolocation.getCurrentPosition(p=>{
+      if(inp) inp.value = p.coords.latitude.toFixed(6)+", "+p.coords.longitude.toFixed(6);
+      toast("Posição capturada — precisão de uns "+Math.round(p.coords.accuracy)+" m");
+    }, err=>{
+      toast(err && err.code===1 ? "O app não tem permissão para usar a localização"
+                                : "Não consegui a posição — tente a céu aberto");
+    }, {enableHighAccuracy:true, timeout:20000, maximumAge:0});
+  }
   else if(a==="travar-fatores"){
     // nome em branco não vira texto travado: na análise ele sairia como "o fator"
     const semNome = e.fatores.some(f=>!(f.nome||"").trim() || (f.niveis||[]).some(n=>!(n.nome||"").trim()));
@@ -5056,6 +5490,8 @@ document.addEventListener("click", async ev=>{
       + (syncPronto() ? " — e o ensaio sai também dos outros aparelhos." : "."))){
       const idExcluido = e.id;
       apagarBytesFotos((e.fotos||[]).map(f=>f.id));
+      apagarPdfs((e.relatorios||[]).map(r=>r.id));
+      (e.relatorios||[]).forEach(r=>{ if(r.remota) enfileirarExclusaoPdf(r.id); });
       ST.experimentos = ST.experimentos.filter(x=>x.id!==idExcluido);
       marcarSujo(); fecharModal(); TELA={nome:"home",expId:null,aba:"protocolo",avId:null}; render();
       /* Marca a exclusão no servidor em vez de apagar a linha: sem esse rastro, o
