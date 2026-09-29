@@ -447,6 +447,19 @@ function migrar(){
   (ST.experimentos||[]).forEach(e=>{
     if(typeof e.grupoId !== "string") e.grupoId = "";
     if(!Array.isArray(e.etiquetas)) e.etiquetas = [];
+    /* Nome padrão virou "T1, T2…". Só muda o que ainda está EXATAMENTE no
+       padrão antigo — um nome que alguém escreveu não é tocado. */
+    (e.tratamentos||[]).forEach(t=>{
+      const m = /^Tratamento (\d+)$/.exec(t.nome||"");
+      if(m) t.nome = "T" + m[1];
+    });
+    /* O protocolo passou a travar depois de salvo. Ensaio que já tem texto
+       começa travado — era justamente o toque acidental que se queria evitar;
+       o que está vazio começa aberto, para dar para escrever. */
+    if(typeof e.protocoloTravado !== "boolean"){
+      const p = e.protocolo || {};
+      e.protocoloTravado = !!((p.objetivo||"").trim() || (p.metodologia||"").trim() || (p.observacoes||"").trim());
+    }
     // etiqueta apagada não pode deixar referência solta no ensaio
     e.etiquetas = e.etiquetas.filter(id=>ST.etiquetas.some(x=>x.id===id));
     /* Carimbo de quando este ensaio mudou pela última vez: é por ele que a
@@ -516,6 +529,20 @@ function rotulosAplicacao(e){
     for(let j=i+1;j<base.length;j++) combos.push(base[i]+base[j]);
   return base.concat(combos);
 }
+/* Testemunha não recebe produto nem aplicação: não faz sentido preencher nela
+   a unidade ou a letra que vale para os tratados. */
+function ehProdutoTestemunha(p){ return /testemunha/i.test((p && p.nome) || ""); }
+/* Com uma aplicação só no ensaio, não há o que escolher: todo produto sem
+   aplicação recebe ela. Poupa marcar "A" em linha por linha. */
+function preencherAplicacaoUnica(e){
+  const base = (e.aplicacoes||[]).map(a=>a.rotulo).filter(Boolean);
+  if(base.length !== 1) return 0;
+  let n = 0;
+  (e.tratamentos||[]).forEach(t=>(t.produtos||[]).forEach(p=>{
+    if(!p.aplicacao && !ehProdutoTestemunha(p)){ p.aplicacao = base[0]; n++; }
+  }));
+  return n;
+}
 function aplicacoesTexto(e){
   return (e.aplicacoes||[])
     .filter(a=>a.rotulo)
@@ -549,19 +576,37 @@ function fatorTexto(e, t){
 }
 /* Um ensaio só é analisado como fatorial quando os tratamentos cobrem
    exatamente todas as combinações dos níveis, uma vez cada. */
+/* Reconhece o fatorial, com ou sem tratamento adicional (3×3+1, 2×4+1…).
+   Adicional é o tratamento SEM nível nenhum — tipicamente a testemunha. Ele
+   fica fora do fatorial e entra na análise como um contraste próprio.
+   Até a versão 14, um tratamento a mais fazia esta função devolver null e o app
+   analisava tudo como tratamentos simples, sem avisar: o ensaio de glifosato
+   3×3+1 saiu sem o desdobramento dose × volume, que era a pergunta dele. */
 function ehFatorial(e){
   const f = (e.fatores||[]).filter(x=>(x.niveis||[]).length>=2);
   if(f.length < 2) return null;
   const combos = f.reduce((a,x)=>a*x.niveis.length, 1);
-  if(combos !== e.tratamentos.length) return null;
-  const vistos = new Set();
-  for(const t of e.tratamentos){
-    const chave = f.map(x=>t.niveis[x.id]||"").join("|");
-    if(chave.split("|").some(v=>!v)) return null;   // tratamento sem nível definido
-    if(vistos.has(chave)) return null;              // combinação repetida
+  const vistos = new Set(), adicionais = [];
+  for(let i=0;i<e.tratamentos.length;i++){
+    const t = e.tratamentos[i];
+    const niv = f.map(x=>(t.niveis||{})[x.id]||"");
+    if(niv.every(v=>!v)){ adicionais.push(i); continue; }   // sem nível: adicional
+    if(niv.some(v=>!v)) return null;                        // nível pela metade: ambíguo
+    const chave = niv.join("|");
+    if(vistos.has(chave)) return null;                      // combinação repetida
     vistos.add(chave);
   }
-  return f;
+  if(vistos.size !== combos) return null;                   // falta combinação
+  // parcela subdividida pressupõe o fatorial puro: com adicional, não se aplica
+  if(adicionais.length && e.delineamento === "SPLIT") return null;
+  const r = f.slice();
+  r.adicionais = adicionais;
+  return r;
+}
+/* "3 × 3" ou "3 × 3 + 1" */
+function arranjoTexto(fat){
+  return fat.map(f=>f.niveis.length).join(" × ")
+    + ((fat.adicionais||[]).length ? " + " + fat.adicionais.length : "");
 }
 
 /* ============================ ESTATÍSTICA ============================ */
@@ -994,12 +1039,45 @@ function alfaTexto(a){ return ALFAS[String(a)] || (a*100)+"%"; }
  * `fat` são os fatores validados por ehFatorial; `trats` traz os níveis de cada
  * tratamento. Retorna as linhas extras do quadro, ou null se não for fatorial.
  */
+/* Fatorial com adicional: o desdobramento é feito SÓ com os tratamentos do
+   fatorial (correção e SQ próprias), e o que sobra da SQ de tratamentos vira o
+   contraste "testemunha vs. fatorial". O resíduo é o do ensaio inteiro — é o
+   mesmo arranjo que SASM-Agri e SISVAR usam para fatorial com tratamento
+   adicional. Soma: SQ Trat = SQ fatorial + SQ contraste (+ SQ entre adicionais). */
 function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa){
+  if(!fat) return null;
+  const adic = fat.adicionais || [];
+  if(!adic.length) return decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa);
+
+  const idxF = trats.map((_,i)=>i).filter(i=>adic.indexOf(i) < 0);
+  const tratsF = idxF.map(i=>trats[i]), somaF = idxF.map(i=>somaT[i]);
+  const totF = somaF.reduce((a,s)=>a+s, 0);
+  const CF  = totF*totF/(idxF.length*nRep);
+  const sqF = somaF.reduce((a,s)=>a+s*s, 0)/nRep - CF;
+  const dec = decomporFatorial(fat, tratsF, somaF, nRep, CF, sqF, glRes, qmRes, teste, alfa);
+
+  const somaA = adic.map(i=>somaT[i]);
+  const totA = somaA.reduce((a,s)=>a+s, 0);
+  const sqEntre = adic.length > 1 ? somaA.reduce((a,s)=>a+s*s, 0)/nRep - totA*totA/(adic.length*nRep) : 0;
+  const sqContraste = sqTrat - sqF - sqEntre;
+  const linha = (nome, gl, sq) => {
+    const qm = sq/gl, F = qmRes>0 ? qm/qmRes : null;
+    return {nome, gl, sq, qm, f:F, p:pValorF(F, gl, glRes), nivel:1, adicional:true};
+  };
+  // o contraste vem antes: é a primeira pergunta — o fatorial fez diferença?
+  dec.linhas.unshift(linha(adic.length > 1 ? "Adicionais vs. fatorial" : "Testemunha vs. fatorial", 1, sqContraste));
+  if(adic.length > 1) dec.linhas.splice(1, 0, linha("Entre adicionais", adic.length-1, sqEntre));
+  dec.adicionais = adic.map(i=>({nome: trats[i].nome, num: trats[i].num, media: somaT[i]/nRep}));
+  dec.mediaFatorial = totF/(idxF.length*nRep);
+  return dec;
+}
+function decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa){
   alfa = alfa||0.05;
   if(!fat) return null;
   const linhas = [], medias = [];
   let sqEfeitos = 0, glEfeitos = 0;
-  fat.forEach(f=>{
+  const sqEfeito = {};              // SQ de cada efeito, pela chave dos índices: "0", "1", "0,1"…
+  fat.forEach((f, fi)=>{
     const soma = {}, n = {};
     f.niveis.forEach(nv=>{ soma[nv.id]=0; n[nv.id]=0; });
     trats.forEach((t,i)=>{
@@ -1010,6 +1088,7 @@ function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa)
     const sq = f.niveis.reduce((a,nv)=> a + (n[nv.id] ? soma[nv.id]*soma[nv.id]/n[nv.id] : 0), 0) - C;
     const gl = f.niveis.length - 1;
     sqEfeitos += sq; glEfeitos += gl;
+    sqEfeito[String(fi)] = sq;
     const qm = sq/gl, F = qmRes>0 ? qm/qmRes : null;
     linhas.push({nome:f.nome||"Fator", gl, sq, qm, f:F, p:pValorF(F,gl,glRes), nivel:1});
 
@@ -1033,15 +1112,45 @@ function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa)
     medias.push({fator:f.nome||"Fator", dms, linhas:lst});
   });
 
-  // interação: o que sobra da SQ de tratamentos depois dos efeitos principais
-  const sqInt = sqTrat - sqEfeitos;
-  const glInt = fat.reduce((a,f)=>a*(f.niveis.length-1), 1);
-  if(glInt > 0){
-    const qm = sqInt/glInt, F = qmRes>0 ? qm/qmRes : null;
-    linhas.push({nome: fat.map(f=>f.nome||"Fator").join(" × "), gl:glInt, sq:sqInt, qm,
-                 f:F, p:pValorF(F,glInt,glRes), nivel:1, interacao:true});
+  /* Interações: TODAS as combinações de dois ou mais fatores. A SQ de cada uma
+     é a da tabela marginal daquele conjunto de fatores menos os efeitos de
+     todos os seus subconjuntos. Com dois fatores dá exatamente o que dava antes
+     (o que sobra da SQ de tratamentos). Com três, separa A×B, A×C, B×C e A×B×C —
+     até a versão 14 vinha tudo numa linha só, chamada A×B×C, com o GL da
+     interação tripla: a SQ somava certo, mas o F e o p-valor saíam errados. */
+  const nF = fat.length;
+  const conjuntos = [];
+  for(let m = 1; m < (1 << nF); m++){
+    const idx = [];
+    for(let j = 0; j < nF; j++) if(m & (1 << j)) idx.push(j);
+    if(idx.length >= 2) conjuntos.push(idx);
   }
-  return {linhas, medias, glInt, pInt: glInt>0 && qmRes>0 ? pValorF((sqInt/glInt)/qmRes, glInt, glRes) : null};
+  conjuntos.sort((a,b)=>a.length - b.length);     // subconjuntos antes: é deles que se subtrai
+  let glInt = 0, pInt = null;
+  conjuntos.forEach(idx=>{
+    const tot = {}, cont = {};
+    trats.forEach((t,i)=>{
+      const k = idx.map(j=>t.niveis[fat[j].id]).join("|");
+      tot[k] = (tot[k]||0) + somaT[i];
+      cont[k] = (cont[k]||0) + nRep;
+    });
+    let sq = -C;
+    Object.keys(tot).forEach(k=>{ sq += tot[k]*tot[k]/cont[k]; });
+    for(let m = 1; m < (1 << idx.length) - 1; m++){
+      const sub = [];
+      for(let j = 0; j < idx.length; j++) if(m & (1 << j)) sub.push(idx[j]);
+      sq -= sqEfeito[sub.join(",")] || 0;
+    }
+    sqEfeito[idx.join(",")] = sq;
+    const gl = idx.reduce((a,j)=>a*(fat[j].niveis.length - 1), 1);
+    if(gl <= 0) return;
+    const qm = sq/gl, F = qmRes>0 ? qm/qmRes : null, p = pValorF(F, gl, glRes);
+    linhas.push({nome: idx.map(j=>fat[j].nome||"Fator").join(" × "), gl, sq, qm, f:F, p, nivel:1, interacao:true});
+    glInt += gl;
+    // "interação significativa" quando QUALQUER uma for: guarda o menor p
+    if(p != null && (pInt == null || p < pInt)) pInt = p;
+  });
+  return {linhas, medias, glInt, pInt: qmRes>0 ? pInt : null};
 }
 
 function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
@@ -1292,7 +1401,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-26 · 14";
+const VERSAO_APP = "2026-09-29 · 15";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -2579,7 +2688,7 @@ function novoExperimento(dados){
     fatores:[], tratamentos:[], avaliacoes:[], fotos:[]
   };
   const n = Math.max(1, Number(dados.nTrat)||4);
-  for(let i=0;i<n;i++) e.tratamentos.push({id:uid(), num:i+1, nome:"Tratamento "+(i+1),
+  for(let i=0;i<n;i++) e.tratamentos.push({id:uid(), num:i+1, nome:"T"+(i+1),
     produtos:[{id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}], niveis:{}});
   ST.experimentos.push(e); marcarSujo();
   TELA = {nome:"exp", expId:e.id, aba:"protocolo", avId:null};
@@ -2588,7 +2697,7 @@ function novoExperimento(dados){
 function novaAvaliacao(e, dados){
   const av = {
     id:uid(), nome:dados.nome, data:dados.data||hoje(), tipo:dados.tipo||"",
-    unidade:dados.unidade||"", dae:dados.dae||"", obs:"", dados:{}
+    unidade:dados.unidade||"", dae:dados.dae||"", ref:(REFS_DIAS.indexOf(dados.ref)>=0 ? dados.ref : "DAE"), obs:"", dados:{}
   };
   e.avaliacoes.push(av); marcarSujo();
   TELA.aba="avaliacoes"; TELA.avId=av.id; render();
@@ -3102,15 +3211,28 @@ function abaProtocolo(e){
     + ficha("Comparação de médias",(TESTES[e.teste]||{}).nome||"Tukey")
     + ficha("Tratamentos",String(e.tratamentos.length)) + ficha("Repetições",String(e.nRep))
     + ficha("Área da parcela", e.areaParcela!=null ? fmt(e.areaParcela,2)+" m²" : "—")
-    + ficha("Vazão de calda", e.vazao || "—")
+    + ficha("Taxa de aplicação", e.vazao || "—")
     + ficha("Plantio", dataBr(e.dataPlantio)) + ficha("Responsável", e.responsavel||"—")
     + '</div></div></div>';
 
-  s += '<div class="sec"><div class="eyebrow">Protocolo</div><h2>O que este ensaio se propõe a responder</h2>'
+  /* Objetivo, metodologia e observações travam depois de salvos: são textos
+     longos, escritos com calma, e um toque acidental no campo apagava ou
+     alterava sem ninguém perceber. Mesmo padrão das aplicações e do croqui. */
+  const travProt = so || e.protocoloTravado;
+  const campoProt = (rot,val,chave,dica,linhas) => travProt
+    ? '<div class="campo"><label>'+rot+'</label><div class="protocolo" style="font-size:.95rem;white-space:pre-wrap">'
+      + (esc(val)||'<i style="color:var(--muted)">—</i>')+'</div></div>'
+    : campo(rot,val,chave,dica,linhas);
+  s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Protocolo</div>'
+    + '<h2>O que este ensaio se propõe a responder</h2></div>'
+    + (so ? '' : (e.protocoloTravado
+        ? '<button class="b b-s" data-acao="destravar-protocolo">Editar</button>'
+        : '<button class="b b-s b-p" data-acao="travar-protocolo">Salvar</button>'))
+    + '</div>'
     + '<div class="card card-p grid" style="gap:18px">'
-    + campo("Objetivo", e.protocolo.objetivo, "protocolo.objetivo", "Ex.: avaliar o efeito de fungicidas no controle de ferrugem-asiática e na produtividade da soja DM 64E64.", 4)
-    + campo("Metodologia", e.protocolo.metodologia, "protocolo.metodologia", "Delineamento, dimensões da parcela, época e forma de aplicação, equipamento, volume de calda, critérios de avaliação.", 8)
-    + campo("Observações gerais", e.protocolo.observacoes, "protocolo.observacoes", "Histórico da área, condições climáticas, ocorrências durante a condução do ensaio.", 5)
+    + campoProt("Objetivo", e.protocolo.objetivo, "protocolo.objetivo", "Ex.: avaliar o efeito de fungicidas no controle de ferrugem-asiática e na produtividade da soja DM 64E64.", 4)
+    + campoProt("Metodologia", e.protocolo.metodologia, "protocolo.metodologia", "Delineamento, dimensões da parcela, época e forma de aplicação, equipamento, taxa de aplicação, critérios de avaliação.", 8)
+    + campoProt("Observações gerais", e.protocolo.observacoes, "protocolo.observacoes", "Histórico da área, condições climáticas, ocorrências durante a condução do ensaio.", 5)
     + '</div></div>';
 
   /* Croqui de campo: onde cada tratamento está fisicamente na área. Serve para
@@ -3422,7 +3544,7 @@ function abaTratamentos(e){
     e.fatores.forEach((f,fi)=>{
       s += '<div class="card card-p"><div class="linha" style="gap:8px;margin-bottom:10px">'
         + '<span class="pill pill-a">Fator '+String.fromCharCode(65+fi)+'</span>'
-        + '<div style="flex:1">'+inp("fator."+f.id+".nome", f.nome, "Ex.: Vazão de calda")+'</div>'
+        + '<div style="flex:1">'+inp("fator."+f.id+".nome", f.nome, "Ex.: Taxa de aplicação")+'</div>'
         + (so?'':'<button class="b b-x" data-acao="del-fator" data-id="'+f.id+'" aria-label="Remover fator">&times;</button>')
         + '</div><div class="grid" style="gap:6px">';
       (f.niveis||[]).forEach(nv=>{
@@ -3437,7 +3559,7 @@ function abaTratamentos(e){
     s += '</div>';
     if(!e.fatores.length){
       s += '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
-        + 'Nenhum fator ainda. Crie o primeiro — <b>Vazão de calda</b>, <b>Adubação</b> — '
+        + 'Nenhum fator ainda. Crie o primeiro — <b>Taxa de aplicação</b>, <b>Adubação</b> — '
         + 'e liste os níveis de cada um.</p>';
     }
     if(!so) s += '<button class="b b-s" data-acao="add-fator" style="margin-top:10px">+ Fator</button>';
@@ -3447,14 +3569,24 @@ function abaTratamentos(e){
     const validos = e.fatores.filter(f=>(f.niveis||[]).length>=2).length;
     if(validos>=2 && !fat){
       s += '<div class="aviso aviso-w" style="margin-top:12px"><span>&#9888;</span><div>'
-        + 'Para a análise separar os efeitos, os tratamentos precisam ser exatamente as <b>'+combos+'</b> '
-        + 'combinações dos níveis, uma cada. Hoje são '+e.tratamentos.length+' tratamentos.'
-        + (so?'':' <button class="b b-s" data-acao="gerar-trat" style="margin-top:8px">Gerar as '+combos+' combinações</button>')
+        + 'Para a análise separar os efeitos, os tratamentos precisam ser as <b>'+combos+'</b> '
+        + 'combinações dos níveis, uma cada — mais a testemunha, se houver, sem nível nenhum. '
+        + 'Hoje são '+e.tratamentos.length+' tratamentos e o arranjo não fecha.'
+        + (so?'':'<div class="linha" style="margin-top:8px;gap:8px;flex-wrap:wrap">'
+            + '<button class="b b-s" data-acao="gerar-trat" data-com="1">Gerar '+combos+' + testemunha</button>'
+            + '<button class="b b-s" data-acao="gerar-trat">Gerar só as '+combos+'</button></div>')
         + '</div></div>';
     } else if(fat){
+      const ad = (fat.adicionais||[]).map(i=>e.tratamentos[i]);
       s += '<div class="aviso aviso-i" style="margin-top:12px"><span>&#10003;</span><div>'
-        + 'Esquema fatorial <b>'+fat.map(f=>f.niveis.length).join(' × ')+'</b> reconhecido. '
-        + 'A análise vai separar '+fat.map(f=>f.nome||"o fator").join(', ')+' e a interação entre eles.</div></div>';
+        + 'Esquema fatorial <b>'+arranjoTexto(fat)+'</b> reconhecido. '
+        + 'A análise vai separar '+fat.map(f=>f.nome||"o fator").join(', ')+' e a interação entre eles'
+        + (ad.length
+            ? ', e comparar '+(ad.length===1 ? 'a testemunha (<b>'+esc(ad[0].nome||("T"+ad[0].num))+'</b>)'
+                                             : 'os '+ad.length+' tratamentos adicionais')
+              + ' com o fatorial num contraste próprio.'
+            : '.')
+        + '</div></div>';
     }
   }
   s += '</div>';
@@ -3619,11 +3751,40 @@ function abaAvaliacoes(e){
   let preench=0; matriz.forEach(l=>l.forEach(v=>{ if(v!=null) preench++; }));
   const total = e.tratamentos.length*e.nRep;
 
-  s += '<div class="sec"><div class="sec-cab"><div>'
-    + '<div class="eyebrow">'+esc(av.tipo||"Avaliação")+(av.dae?' · '+esc(av.dae)+' DAE':'')+'</div>'
-    + '<h2>'+esc(av.nome)+'</h2>'
-    + '<div style="font-size:.82rem;color:var(--muted);margin-top:2px">'+dataBr(av.data)
-    + (av.unidade?' · unidade: '+esc(av.unidade):'')+'</div></div>'
+  /* Travada, a avaliação mostra nome e unidade como texto. Destravada pelo
+     Editar, eles viram campos junto com a tabela — é o mesmo gesto, e antes
+     não havia jeito de corrigir um nome ou uma unidade digitados errado. */
+  const editandoAv = !so && !av.travada;
+  const campoAv = (rot, chave, val, extra) =>
+    '<label style="display:flex;flex-direction:column;gap:3px;font-size:.72rem;color:var(--muted);'
+    + 'text-transform:uppercase;letter-spacing:.06em">'+rot
+    + '<input data-campo="av.'+chave+'.'+av.id+'" data-k="av.'+chave+'.'+av.id+'" value="'+esc(val||"")+'" '
+    + (extra||'')+' style="border:1px solid var(--line-2);background:var(--surface);border-radius:5px;'
+    + 'padding:7px 9px;min-height:36px;font-size:.9rem;text-transform:none;letter-spacing:0;color:var(--ink)"></label>';
+  // editando, os campos tomam a linha inteira e os botões descem — no celular
+  // ficavam espremidos em meia largura, com os botões por cima da data
+  s += '<div class="sec"><div class="sec-cab"'+(editandoAv ? ' style="flex-wrap:wrap;gap:12px"' : '')+'>'
+    + '<div style="'+(editandoAv ? 'flex:1 1 100%' : 'flex:1')+';min-width:0">'
+    + (editandoAv
+        ? '<div class="grid" style="gap:10px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));max-width:640px">'
+          + '<div style="grid-column:1/-1">'+campoAv("Nome da avaliação","nome",av.nome,'placeholder="Ex.: % de controle"')+'</div>'
+          + campoAv("Data","data",av.data,'type="date"')
+          + '<label style="display:flex;flex-direction:column;gap:3px;font-size:.72rem;color:var(--muted);'
+            + 'text-transform:uppercase;letter-spacing:.06em">Dias após'
+            + '<div class="linha" style="gap:6px;flex-wrap:nowrap">'
+            + '<input data-campo="av.dae.'+av.id+'" data-k="av.dae.'+av.id+'" value="'+esc(av.dae||"")+'" inputmode="numeric" '
+            + 'placeholder="14" style="flex:1;min-width:0;border:1px solid var(--line-2);background:var(--surface);'
+            + 'border-radius:5px;padding:7px 9px;min-height:36px;font-size:.9rem">'
+            + seletorRef(refDias(av), 'data-campo="av.ref.'+av.id+'" style="flex:none;width:76px;border:1px solid '
+                + 'var(--line-2);background:var(--surface);border-radius:5px;padding:7px 4px;min-height:36px;font-size:.88rem"')
+            + '</div></label>'
+          + campoAv("Unidade","unidade",av.unidade,'placeholder="%, cm, kg/ha"')
+          + '</div>'
+        : '<div class="eyebrow">'+esc(av.tipo||"Avaliação")+(av.dae?' · '+esc(diasTexto(av)):'')+'</div>'
+          + '<h2>'+(esc(av.nome)||'<i style="color:var(--muted)">sem nome</i>')+'</h2>'
+          + '<div style="font-size:.82rem;color:var(--muted);margin-top:2px">'+dataBr(av.data)
+          + (av.unidade?' · unidade: '+esc(av.unidade):'')+'</div>')
+    + '</div>'
     + '<div class="linha">'
     + '<span class="pill '+(preench===total?"pill-a":"pill-w")+'">'+preench+' / '+total+' parcelas</span>'
     + (so ? '' : (av.travada
@@ -4078,6 +4239,17 @@ function abaAnalise(e){
             : 'Interação não significativa — os fatores podem ser interpretados separadamente, '
               + 'pelas médias de cada um abaixo.')
         + '</div></div>';
+      // fatorial com testemunha: o contraste diz se tratar fez diferença, antes de comparar doses
+      if(r.fatorial.adicionais && r.fatorial.adicionais.length){
+        const ct = r.fonte.find(l=>l.adicional && /vs\. fatorial/.test(l.nome));
+        const sig = ct && ct.p!=null && ct.p < 0.05;
+        s += '<div class="aviso '+(sig?'aviso-i':'aviso-w')+'" style="margin-top:12px"><span>&#8505;</span><div>'
+          + r.fatorial.adicionais.map(a=>'<b>'+esc(a.nome||("T"+a.num))+'</b> (testemunha): média '+fmt(a.media)).join(" · ")
+          + ' · fatorial: média '+fmt(r.fatorial.mediaFatorial)+'. '
+          + (sig ? 'A diferença entre testemunha e fatorial é significativa.'
+                 : 'A testemunha não difere do conjunto do fatorial.')
+          + '</div></div>';
+      }
       r.fatorial.medias.forEach(fm=>{
         s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
           + '<th>'+esc(fm.fator)+'</th><th>Média</th><th>'+esc((TESTES[r.teste]||TESTES.tukey).nome)+'</th></tr></thead><tbody>';
@@ -4244,7 +4416,7 @@ function modalExperimento(e){
              + '<span class="dica">Você descreve cada um na aba Tratamentos.</span></div>')
     + '<div class="grid" style="grid-template-columns:1fr 1fr">'
       + c("Área da parcela (m²)","areaParcela",v.areaParcela,"text","Ex.: 9")
-      + c("Vazão de calda","vazao",v.vazao,"text","Ex.: 150 L/ha") + '</div>'
+      + c("Taxa de aplicação","vazao",v.vazao,"text","Ex.: 150 L/ha") + '</div>'
     + '<div class="grid" style="grid-template-columns:1fr 1fr">'
       + c("Data de plantio","dataPlantio",v.dataPlantio,"date")
       + c("Responsável","responsavel",v.responsavel,"text","Quem conduz o ensaio") + '</div>'
@@ -4265,13 +4437,31 @@ function modalExperimento(e){
     } else { fecharModal(); novoExperimento(d); }
   });
 }
+/* De onde se contam os dias: emergência, aplicação ou semeadura. Ensaio de
+   herbicida pós-emergente conta da aplicação (DAA); o app só oferecia DAE, e
+   o relatório saía dizendo "10 DAE" com a metodologia dizendo DAA. */
+const REFS_DIAS = ["DAE","DAA","DAS"];
+function refDias(av){ return (av && REFS_DIAS.indexOf(av.ref) >= 0) ? av.ref : "DAE"; }
+function diasTexto(av){ return (av && av.dae) ? av.dae + " " + refDias(av) : ""; }
+function seletorRef(atual, extra){
+  return '<select '+(extra||'')+'>'
+    + REFS_DIAS.map(r=>'<option'+(r===atual?' selected':'')+'>'+r+'</option>').join("")
+    + '</select>';
+}
 function modalAvaliacao(e){
+  // a nova avaliação herda o marco da anterior: num ensaio de herbicida, todas são DAA
+  const ultima = (e.avaliacoes||[])[(e.avaliacoes||[]).length-1];
+  const refPadrao = ultima ? refDias(ultima) : "DAE";
   abrirModal('<h2>Nova avaliação</h2><form id="f-av" class="grid">'
     + '<div class="campo"><label>Nome da avaliação</label>'
       + '<input name="nome" placeholder="Ex.: Severidade de ferrugem — 3ª aplicação" required></div>'
     + '<div class="grid" style="grid-template-columns:1fr 1fr">'
       + '<div class="campo"><label>Data</label><input name="data" type="date" value="'+hoje()+'"></div>'
-      + '<div class="campo"><label>DAE / DAA</label><input name="dae" inputmode="numeric" placeholder="Ex.: 45"></div></div>'
+      + '<div class="campo"><label>Dias após</label>'
+        + '<div class="linha" style="gap:6px;flex-wrap:nowrap">'
+        + '<input name="dae" inputmode="numeric" placeholder="Ex.: 14" style="flex:1;min-width:0">'
+        + seletorRef(refPadrao, 'name="ref" style="flex:none;width:80px"')
+        + '</div></div></div>'
     + '<div class="grid" style="grid-template-columns:1fr 1fr">'
       + '<div class="campo"><label>Tipo</label><select name="tipo" id="sel-tipo">'
       + ["Severidade","Estande","Altura de plantas","Produtividade","Nota visual","Fitotoxicidade","Outro"]
@@ -4426,7 +4616,7 @@ async function exportar(e){
   txt += "Comparação de médias: "+((TESTES[e.teste]||TESTES.tukey).nome)
        + " a "+alfaTexto(alfaDe(e))+"\n";
   txt += "Área da parcela: "+(e.areaParcela!=null?fmt(e.areaParcela,2)+" m²":"—")+"\n";
-  txt += "Vazão de calda: "+(e.vazao||"—")+"\n";
+  txt += "Taxa de aplicação: "+(e.vazao||"—")+"\n";
   txt += "Plantio: "+dataBr(e.dataPlantio)+"\nResponsável: "+e.responsavel+"\n\n";
   txt += "PROTOCOLO\n"+"-".repeat(60)+"\n";
   txt += "Objetivo:\n"+(e.protocolo.objetivo||"—")+"\n\nMetodologia:\n"+(e.protocolo.metodologia||"—")
@@ -4442,8 +4632,9 @@ async function exportar(e){
     e.fatores.forEach(f=>{
       txt += (f.nome||"Fator")+": "+(f.niveis||[]).map(n=>n.nome||"?").join(", ")+"\n";
     });
-    if(fatExp) txt += "Arranjo "+fatExp.map(f=>f.niveis.length).join(" × ")
-      + " — a análise separa os efeitos principais e a interação.\n";
+    if(fatExp) txt += "Arranjo "+arranjoTexto(fatExp)
+      + " — a análise separa os efeitos principais e a interação"
+      + ((fatExp.adicionais||[]).length ? ", e compara a testemunha com o fatorial" : "") + ".\n";
     txt += "\n";
   }
   if(e.croqui && Object.keys(e.croqui).length){
@@ -4487,7 +4678,7 @@ async function exportar(e){
 
   e.avaliacoes.forEach(av=>{
     txt += "\n\nAVALIAÇÃO: "+av.nome+"\n"+"-".repeat(60)+"\n";
-    txt += "Data: "+dataBr(av.data)+(av.dae?" | "+av.dae+" DAE":"")+(av.unidade?" | unidade: "+av.unidade:"")+"\n\n";
+    txt += "Data: "+dataBr(av.data)+(av.dae?" | "+diasTexto(av):"")+(av.unidade?" | unidade: "+av.unidade:"")+"\n\n";
     txt += "Dados por parcela:\nTratamento\t"+Array.from({length:e.nRep},(_,i)=>"Bloco "+(i+1)).join("\t")+"\tMédia\n";
     const matriz = matrizDe(e,av);
     e.tratamentos.forEach((t,ti)=>{
@@ -4650,6 +4841,14 @@ document.addEventListener("click", async ev=>{
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
   }
+  else if(a==="travar-protocolo"){
+    e.protocoloTravado = true; marcarSujo(); render(); toast("Protocolo salvo");
+  }
+  else if(a==="destravar-protocolo"){
+    e.protocoloTravado = false; marcarSujo(); render();
+    const t = document.querySelector('[data-k="protocolo.objetivo"]');
+    if(t) t.focus();
+  }
   else if(a==="editar-obs"){
     TELA.editObs = id; render();
     const t = document.querySelector('[data-k="obs.'+id+'"]');
@@ -4725,13 +4924,14 @@ document.addEventListener("click", async ev=>{
   }
   else if(a==="add-trat"){
     const n = e.tratamentos.length+1;
-    e.tratamentos.push({id:uid(), num:n, nome:"Tratamento "+n,
+    e.tratamentos.push({id:uid(), num:n, nome:"T"+n,
       produtos:[{id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}], niveis:{}});
+    preencherAplicacaoUnica(e);
     marcarSujo(); render();
   }
   else if(a==="add-prod"){
     const t = e.tratamentos.find(x=>x.id===id);
-    if(t){ t.produtos.push({id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}); marcarSujo(); render(); }
+    if(t){ t.produtos.push({id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}); preencherAplicacaoUnica(e); marcarSujo(); render(); }
   }
   else if(a==="del-prod"){
     const t = e.tratamentos.find(x=>x.id===id);
@@ -4782,21 +4982,32 @@ document.addEventListener("click", async ev=>{
   else if(a==="gerar-trat"){
     const f = e.fatores.filter(x=>(x.niveis||[]).length>=2);
     const combos = f.reduce((a,x)=>a*x.niveis.length, 1);
+    const comTest = el.dataset.com === "1";
+    const total = combos + (comTest ? 1 : 0);
     if(!await confirmar("Substituir os "+e.tratamentos.length+" tratamentos atuais pelas "+combos
-      + " combinações dos fatores? Os dados já lançados nas avaliações são apagados.")) return;
+      + " combinações dos fatores"+(comTest?" mais a testemunha":"")
+      + "? Os dados já lançados nas avaliações são apagados.")) return;
     let lista = [{}];
     f.forEach(x=>{
       const nova = [];
       lista.forEach(c=>x.niveis.forEach(nv=>{ const o={...c}; o[x.id]=nv.id; nova.push(o); }));
       lista = nova;
     });
-    e.tratamentos = lista.map((niveis,i)=>({
-      id:uid(), num:i+1, niveis,
-      nome: f.map(x=>(x.niveis.find(n=>n.id===niveis[x.id])||{}).nome||"?").join(" × "),
-      produtos:[{id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}]
-    }));
+    /* A testemunha vem como T1, sem nível nenhum — é assim que o app a
+       reconhece como tratamento adicional. As combinações seguem de T2 em
+       diante. O nome é só "T" + número; a combinação aparece na coluna Fatores. */
+    const novos = [];
+    if(comTest) novos.push({id:uid(), num:1, niveis:{}, nome:"T1",
+      produtos:[{id:uid(), nome:"Testemunha", dose:"", unidade:"", aplicacao:""}]});
+    lista.forEach(niveis=>{
+      const num = novos.length + 1;
+      novos.push({id:uid(), num, niveis, nome:"T"+num,
+        produtos:[{id:uid(), nome:"", dose:"", unidade:"", aplicacao:""}]});
+    });
+    e.tratamentos = novos;
+    preencherAplicacaoUnica(e);
     e.avaliacoes.forEach(av=>{ av.dados = {}; });
-    marcarSujo(); render(); toast(combos+" tratamentos gerados");
+    marcarSujo(); render(); toast(total+" tratamentos gerados");
   }
   else if(a==="sortear-croqui" || a==="sequencial-croqui"){
     if(!e.tratamentos.length){ toast("Cadastre os tratamentos primeiro"); return; }
@@ -4887,7 +5098,10 @@ document.addEventListener("click", async ev=>{
     const sem = e.aplicacoes.filter(x=>!x.estadio || !x.estadio.trim()).length;
     if(sem && !await confirmar("<b>"+sem+"</b> aplicação(ões) sem estádio. Salvar assim mesmo?",
       "Salvar assim")) return;
-    e.aplicTravado = true; marcarSujo(); render(); toast("Aplicações salvas");
+    e.aplicTravado = true;
+    const preenchidos = preencherAplicacaoUnica(e);
+    marcarSujo(); render();
+    toast("Aplicações salvas"+(preenchidos ? " · "+preenchidos+" produto(s) marcados com a aplicação única" : ""));
   }
   else if(a==="destravar-aplic"){
     if(!await confirmar("Liberar as aplicações para edição? Um toque acidental pode alterar "
@@ -4928,6 +5142,12 @@ document.addEventListener("click", async ev=>{
   }
   else if(a==="travar-av"){
     const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
+    // o nome agora é editável: não pode ser salvo em branco, é o que aparece no relatório
+    if(!(av.nome||"").trim()){
+      toast("Dê um nome à avaliação antes de salvar");
+      const c = document.querySelector('[data-k="av.nome.'+av.id+'"]'); if(c) c.focus();
+      return;
+    }
     const m = matrizDe(e,av);
     let faltam = 0; m.forEach(l=>l.forEach(v=>{ if(v==null) faltam++; }));
     if(faltam && !await confirmar("Faltam <b>"+faltam+"</b> parcelas nesta avaliação. "
@@ -5091,7 +5311,22 @@ document.addEventListener("change", ev=>{
     const e = exp(); if(!e) return;
     const t = e.tratamentos.find(x=>x.id===el.dataset.id);
     const p = t && (t.produtos||[]).find(x=>x.id===el.dataset.prod);
-    if(p){ p.aplicacao = el.value; marcarSujo(); }
+    if(!p) return;
+    /* Mesma regra da unidade: a PRIMEIRA escolha se repete nos produtos que
+       ainda estão sem aplicação; depois disso, mexer numa muda só aquela.
+       A testemunha fica de fora. */
+    const todos = e.tratamentos.reduce((a,x)=>a.concat(x.produtos||[]), []);
+    const primeira = el.value && todos.every(x => x === p || !x.aplicacao);
+    p.aplicacao = el.value;
+    let repetidas = 0;
+    if(primeira) todos.forEach(x=>{
+      if(x !== p && !x.aplicacao && !ehProdutoTestemunha(x)){ x.aplicacao = el.value; repetidas++; }
+    });
+    marcarSujo();
+    if(repetidas){
+      render();
+      toast("Aplicação "+el.value+" em "+(repetidas+1)+" produtos — dá para mudar qualquer um");
+    }
     return;
   }
   if(el.dataset.acao==="set-unidade"){
@@ -5107,7 +5342,7 @@ document.addEventListener("change", ev=>{
     const primeira = el.value && todos.every(x => x === p || !x.unidade);
     p.unidade = el.value;
     let repetidas = 0;
-    if(primeira) todos.forEach(x=>{ if(x !== p && !x.unidade){ x.unidade = el.value; repetidas++; } });
+    if(primeira) todos.forEach(x=>{ if(x !== p && !x.unidade && !ehProdutoTestemunha(x)){ x.unidade = el.value; repetidas++; } });
     marcarSujo();
     if(repetidas){
       render();
@@ -5202,6 +5437,12 @@ document.addEventListener("input", ev=>{
   }
   else if(p[0]==="obs"){
     const av = e.avaliacoes.find(x=>x.id===p[1]); if(av) av.obs = el.value;
+  }
+  else if(p[0]==="av"){
+    // só estes campos podem ser escritos por aqui — nada de gravar chave arbitrária
+    const pode = ["nome","data","dae","ref","unidade"];
+    const av = e.avaliacoes.find(x=>x.id===p[2]);
+    if(av && pode.indexOf(p[1]) >= 0) av[p[1]] = el.value;
   }
   marcarSujo();
 });

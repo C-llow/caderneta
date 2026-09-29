@@ -5,7 +5,7 @@
    Os DADOS do caderno não passam por aqui — moram no IndexedDB, que é do app.
    Este arquivo cuida só do "programa", não do que você escreveu nele. */
 
-const VERSAO = "caderneta-v2";
+const VERSAO = "caderneta-v3";
 const ARQUIVOS = [
   ".",
   "index.html",
@@ -20,8 +20,10 @@ self.addEventListener("install", ev=>{
   ev.waitUntil(
     caches.open(VERSAO)
       /* addAll falha inteiro se um arquivo faltar; um a um, o app ainda abre
-         mesmo que um ícone não tenha subido. */
-      .then(c=>Promise.all(ARQUIVOS.map(a=>c.add(a).catch(()=>{}))))
+         mesmo que um ícone não tenha subido. `reload` pula o cache HTTP do
+         navegador: sem isso, um ícone trocado podia voltar velho mesmo com a
+         VERSAO nova. */
+      .then(c=>Promise.all(ARQUIVOS.map(a=>c.add(new Request(a, {cache:"reload"})).catch(()=>{}))))
       .then(()=>self.skipWaiting())
   );
 });
