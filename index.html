@@ -282,6 +282,12 @@ table.dados thead th{
 table.dados td{font-family:"IBM Plex Mono",monospace; font-variant-numeric:tabular-nums}
 table.dados td:first-child{font-family:Archivo,sans-serif}
 table.dados tbody tr:last-child td{border-bottom:0}
+/* Tabela final: colunas centradas como na tabela do relatório; o cabeçalho quebra
+   em linhas (nome, unidade, dias) para não esticar a tabela para os lados. */
+table.tab-final th,table.tab-final td{text-align:center}
+table.tab-final thead th{white-space:normal; vertical-align:bottom; text-transform:none; letter-spacing:0; font-size:.78rem}
+.tf-sub{font-weight:400; color:var(--muted); font-size:.72rem}
+table.tab-final tr.tf-cv td{border-top:2px solid var(--line-2); background:var(--surface-2); font-weight:600}
 .letra{font-weight:700; color:var(--accent); margin-left:2px}
 /* Protocolo impresso: listras alternadas por tratamento, como na caderneta.
    Tudo centralizado — é um quadro de conferência, não um texto corrido, e o
@@ -496,6 +502,12 @@ function migrar(){
     if(typeof e.controle !== "number") e.controle = 0;
     if(typeof e.travado !== "boolean") e.travado = false;
     if(!Array.isArray(e.fatores)) e.fatores = [];
+    /* Fatores também travam depois de salvos. Começa travado quem já tem fator
+       completo (nome e dois níveis com nome); o resto começa aberto. */
+    if(typeof e.fatoresTravado !== "boolean"){
+      e.fatoresTravado = e.fatores.length>0 && e.fatores.every(f=>(f.nome||"").trim()
+        && (f.niveis||[]).length>=2 && f.niveis.every(n=>(n.nome||"").trim()));
+    }
     if(!e.protocolo) e.protocolo = {objetivo:"", metodologia:"", observacoes:""};
     if(!Array.isArray(e.protocolo.anotacoes)) e.protocolo.anotacoes = [];
     (e.tratamentos||[]).forEach(t=>{
@@ -1401,7 +1413,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-29 · 15";
+const VERSAO_APP = "2026-09-29 · 16";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -3219,17 +3231,18 @@ function abaProtocolo(e){
      longos, escritos com calma, e um toque acidental no campo apagava ou
      alterava sem ninguém perceber. Mesmo padrão das aplicações e do croqui. */
   const travProt = so || e.protocoloTravado;
-  const campoProt = (rot,val,chave,dica,linhas) => travProt
+  // um quadro para cada texto: separados, o olho acha a metodologia sem ler o objetivo
+  const campoProt = (rot,val,chave,dica,linhas) => '<div class="card card-p">' + (travProt
     ? '<div class="campo"><label>'+rot+'</label><div class="protocolo" style="font-size:.95rem;white-space:pre-wrap">'
       + (esc(val)||'<i style="color:var(--muted)">—</i>')+'</div></div>'
-    : campo(rot,val,chave,dica,linhas);
+    : campo(rot,val,chave,dica,linhas)) + '</div>';
   s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Protocolo</div>'
     + '<h2>O que este ensaio se propõe a responder</h2></div>'
     + (so ? '' : (e.protocoloTravado
         ? '<button class="b b-s" data-acao="destravar-protocolo">Editar</button>'
         : '<button class="b b-s b-p" data-acao="travar-protocolo">Salvar</button>'))
     + '</div>'
-    + '<div class="card card-p grid" style="gap:18px">'
+    + '<div class="grid" style="gap:12px">'
     + campoProt("Objetivo", e.protocolo.objetivo, "protocolo.objetivo", "Ex.: avaliar o efeito de fungicidas no controle de ferrugem-asiática e na produtividade da soja DM 64E64.", 4)
     + campoProt("Metodologia", e.protocolo.metodologia, "protocolo.metodologia", "Delineamento, dimensões da parcela, época e forma de aplicação, equipamento, taxa de aplicação, critérios de avaliação.", 8)
     + campoProt("Observações gerais", e.protocolo.observacoes, "protocolo.observacoes", "Histórico da área, condições climáticas, ocorrências durante a condução do ensaio.", 5)
@@ -3522,13 +3535,22 @@ function abaTratamentos(e){
   /* A escolha é declarada, não deduzida da presença de fatores: quem abre a aba
      precisa ver qual dos dois o ensaio é antes de procurar onde mudar. */
   const esq = e.esquema === "fatorial" ? "fatorial" : "simples";
+  /* Fatores travam como o protocolo: salvos, viram texto e só mudam pelo Editar.
+     Travado, some também a troca Simples/Fatorial, que apagaria os fatores. */
+  const fatTrav = so || (esq==="fatorial" && e.fatoresTravado);
   s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Esquema</div>'
     + '<h2>'+(esq==="fatorial" ? 'Ensaio fatorial' : 'Tratamentos simples')+'</h2></div>'
-    + (so ? '' : '<div class="seg" role="group" aria-label="Esquema do ensaio">'
-        + '<button class="seg-b'+(esq==="simples"?' on':'')+'" data-acao="set-esquema" '
-        + 'data-modo="simples" aria-pressed="'+(esq==="simples")+'">Simples</button>'
-        + '<button class="seg-b'+(esq==="fatorial"?' on':'')+'" data-acao="set-esquema" '
-        + 'data-modo="fatorial" aria-pressed="'+(esq==="fatorial")+'">Fatorial</button></div>')
+    + (so ? '' : fatTrav
+        ? '<button class="b b-s" data-acao="destravar-fatores">Editar</button>'
+        : '<div class="linha" style="gap:8px">'
+          + '<div class="seg" role="group" aria-label="Esquema do ensaio">'
+          + '<button class="seg-b'+(esq==="simples"?' on':'')+'" data-acao="set-esquema" '
+          + 'data-modo="simples" aria-pressed="'+(esq==="simples")+'">Simples</button>'
+          + '<button class="seg-b'+(esq==="fatorial"?' on':'')+'" data-acao="set-esquema" '
+          + 'data-modo="fatorial" aria-pressed="'+(esq==="fatorial")+'">Fatorial</button></div>'
+          + (esq==="fatorial" && e.fatores.length
+              ? '<button class="b b-s b-p" data-acao="travar-fatores">Salvar</button>' : '')
+          + '</div>')
     + '</div>';
 
   if(esq === "simples"){
@@ -3542,6 +3564,17 @@ function abaTratamentos(e){
   } else {
     s += '<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">';
     e.fatores.forEach((f,fi)=>{
+      if(fatTrav){
+        s += '<div class="card card-p"><div class="linha" style="gap:8px;margin-bottom:10px">'
+          + '<span class="pill pill-a">Fator '+String.fromCharCode(65+fi)+'</span>'
+          + '<b style="font-size:.95rem">'+(esc(f.nome)||'<i style="color:var(--muted)">sem nome</i>')+'</b></div>'
+          + '<div class="linha" style="gap:6px">'
+          + ((f.niveis||[]).length
+              ? f.niveis.map(nv=>'<span class="pill">'+(esc(nv.nome)||'—')+'</span>').join("")
+              : '<span style="font-size:.83rem;color:var(--muted)">sem níveis</span>')
+          + '</div></div>';
+        return;
+      }
       s += '<div class="card card-p"><div class="linha" style="gap:8px;margin-bottom:10px">'
         + '<span class="pill pill-a">Fator '+String.fromCharCode(65+fi)+'</span>'
         + '<div style="flex:1">'+inp("fator."+f.id+".nome", f.nome, "Ex.: Taxa de aplicação")+'</div>'
@@ -3562,7 +3595,7 @@ function abaTratamentos(e){
         + 'Nenhum fator ainda. Crie o primeiro — <b>Taxa de aplicação</b>, <b>Adubação</b> — '
         + 'e liste os níveis de cada um.</p>';
     }
-    if(!so) s += '<button class="b b-s" data-acao="add-fator" style="margin-top:10px">+ Fator</button>';
+    if(!fatTrav) s += '<button class="b b-s" data-acao="add-fator" style="margin-top:10px">+ Fator</button>';
 
     const combos = e.fatores.filter(f=>(f.niveis||[]).length>=2)
                             .reduce((a,f)=>a*f.niveis.length, 1);
@@ -3684,11 +3717,14 @@ function abaTratamentos(e){
     s += '<div style="margin-top:12px"><div class="eyebrow" style="margin-bottom:6px">Produtos e doses</div>'
       + '<div class="grid" style="gap:6px">';
     (t.produtos||[]).forEach((p,pi)=>{
-      s += '<div class="linha" style="gap:6px;flex-wrap:nowrap;align-items:center">'
+      /* Quebra em duas linhas no celular: nome e dose em cima, unidade e
+         aplicação embaixo. Numa linha só ela pedia ~400 px e empurrava a
+         página para o lado. No PC cabe tudo numa linha, como antes. */
+      s += '<div class="linha" style="gap:6px;flex-wrap:wrap;align-items:center">'
         + (pi>0?'<span style="color:var(--muted);font-size:.85rem;flex:none;width:14px">+</span>'
               :'<span style="flex:none;width:14px"></span>')
-        + '<div style="flex:2;min-width:96px">'+inp("prod."+t.id+"."+p.id+".nome", p.nome, "Produto")+'</div>'
-        + '<div style="flex:1;min-width:60px">'+inp("prod."+t.id+"."+p.id+".dose", p.dose, "Dose")+'</div>'
+        + '<div style="flex:2 1 140px;min-width:0">'+inp("prod."+t.id+"."+p.id+".nome", p.nome, "Produto")+'</div>'
+        + '<div style="flex:1 1 64px;min-width:0">'+inp("prod."+t.id+"."+p.id+".dose", p.dose, "Dose")+'</div>'
         + '<div style="flex:none;width:96px">'
         + '<select data-acao="set-unidade" data-id="'+t.id+'" data-prod="'+p.id+'" '
         + 'style="border:1px solid var(--line-2);background:var(--surface);border-radius:5px;'
@@ -4124,6 +4160,43 @@ function telaTodasFotos(e){
 }
 
 /* --------- ANÁLISE --------- */
+/* Tabela final: uma coluna por avaliação, uma linha por tratamento, média e
+   letra em cada célula e o CV embaixo — o formato da tabela de resultados do
+   relatório. Tela, cópia e exportação usam esta mesma montagem. Avaliação sem
+   malha completa fica de fora, e a lista `fora` diz quais. */
+function tabelaFinal(e){
+  const cols = [], fora = [];
+  e.avaliacoes.forEach(av=>{
+    const r = anova(matrizDe(e,av), e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e),
+                    e.tratamentos, e.teste, croquiDe(e,av), alfaDe(e), e.controle);
+    if(!r.ok){ fora.push(av.nome || "sem nome"); return; }
+    /* Casas decimais pela grandeza, como se escreve à mão: produtividade em
+       5.845, altura em 24,2, nota pequena em 1,25. */
+    const mx = Math.max(...r.medias.map(m=>Math.abs(m.media)));
+    const cd = mx>=1000 ? 0 : mx>=10 ? 1 : 2;
+    const cel = {};
+    if(r.dunnett){
+      r.dunnett.linhas.forEach(x=>{
+        cel[x.i] = fmt(x.media,cd) + (x.i===r.dunnett.iCtrl ? "" : " "+(x.difere?"*":"ns"));
+      });
+    } else {
+      r.medias.forEach(m=>{ cel[m.i] = fmt(m.media,cd)+" "+(m.letra||"a"); });
+    }
+    cols.push({ nome: av.nome || "Avaliação", unidade: av.unidade || "", dias: diasTexto(av),
+                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett });
+  });
+  const nomeT = (TESTES[e.teste]||TESTES.tukey).nome;
+  const nota = cols.some(c=>c.dunnett)
+    ? "* difere da testemunha e ns não difere pelo teste de Dunnett a "+alfaTexto(alfaDe(e))
+      + " de probabilidade de erro. C.V. = coeficiente de variação."
+    : "Médias seguidas da mesma letra na coluna não apresentam diferença estatística significativa "
+      + "pelo teste de "+nomeT+" a "+alfaTexto(alfaDe(e))+" de probabilidade de erro. "
+      + "C.V. = coeficiente de variação.";
+  const linhas = e.tratamentos.map((t,i)=>({ t, nome: t.nome || ("T"+t.num), cels: cols.map(c=>c.cel[i] || "—") }))
+                              .sort((a,b)=>a.t.num - b.t.num);
+  return { cols, linhas, fora, nota };
+}
+
 function abaAnalise(e){
   if(e.avaliacoes.length===0){
     return '<div class="card vazio"><h2>Sem dados para analisar</h2>'
@@ -4311,7 +4384,65 @@ function abaAnalise(e){
     });
     s += '</tbody></table></div></div>';
   });
+  return s + secaoTabelaFinal(e);
+}
+
+function secaoTabelaFinal(e){
+  const tf = tabelaFinal(e);
+  let s = '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Resultados</div>'
+    + '<h2>Tabela final</h2></div>'
+    + (tf.cols.length ? '<button class="b b-s" data-acao="copiar-final">Copiar tabela</button>' : '')
+    + '</div>';
+  if(!tf.cols.length){
+    return s + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
+      + 'Aparece quando pelo menos uma avaliação estiver com a malha completa.</p></div>';
+  }
+  s += '<div class="tab-box"><table class="dados tab-final"><thead><tr><th>Trat.</th>'
+    + tf.cols.map(c=>'<th>'+esc(c.nome)
+        + (c.unidade ? '<br><span class="tf-sub">('+esc(c.unidade)+')</span>' : '')
+        + (c.dias ? '<br><span class="tf-sub">'+esc(c.dias)+'</span>' : '')+'</th>').join("")
+    + '</tr></thead><tbody>';
+  tf.linhas.forEach(l=>{
+    s += '<tr><td>'+esc(l.nome)+'</td>'+l.cels.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>';
+  });
+  s += '<tr class="tf-cv"><td>C.V. (%)</td>'+tf.cols.map(c=>'<td>'+c.cv+'</td>').join("")+'</tr>'
+    + '</tbody></table></div>'
+    + '<p style="font-size:.76rem;color:var(--muted);max-width:80ch">'+esc(tf.nota)+'</p>'
+    + (tf.fora.length ? '<p style="font-size:.76rem;color:var(--muted)">Fora da tabela por falta de dados: '
+        + tf.fora.map(esc).join(", ")+'.</p>' : '')
+    + '</div>';
   return s;
+}
+
+/* Copia a tabela final em dois formatos de uma vez: colada no Word vira tabela
+   de verdade (HTML), colada no Excel cai em colunas (texto com TAB). */
+async function copiarTabelaFinal(e){
+  const tf = tabelaFinal(e);
+  const cab = ["Trat."].concat(tf.cols.map(c=>c.nome + (c.unidade ? " ("+c.unidade+")" : "")));
+  const corpo = tf.linhas.map(l=>[l.nome].concat(l.cels))
+                  .concat([["C.V. (%)"].concat(tf.cols.map(c=>c.cv))]);
+  const tsv = [cab].concat(corpo).map(l=>l.join("\t")).join("\n") + "\n\n" + tf.nota;
+  const bd = 'border-top:1px solid #000;border-bottom:1px solid #000;';
+  const cel = (x,tag,est) => '<'+tag+' style="padding:3px 10px;text-align:center;'+(est||'')+'">'+esc(x)+'</'+tag+'>';
+  const html = '<table style="border-collapse:collapse;font-family:\'Times New Roman\',serif;font-size:11pt">'
+    + '<tr>'+cab.map(x=>cel(x,"th",bd)).join("")+'</tr>'
+    + corpo.map((l,i)=>'<tr>'+l.map(x=>cel(x,"td", i===corpo.length-1 ? bd : "")).join("")+'</tr>').join("")
+    + '</table><p style="font-family:\'Times New Roman\',serif;font-size:9pt">'+esc(tf.nota)+'</p>';
+  try{
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([html], {type:"text/html"}),
+      "text/plain": new Blob([tsv], {type:"text/plain"})
+    })]);
+    toast("Tabela copiada — cole no Word ou no Excel");
+    return;
+  }catch(err){}
+  try{ await navigator.clipboard.writeText(tsv); toast("Tabela copiada"); return; }catch(err){}
+  abrirModal('<h2>Tabela final</h2>'
+    + '<textarea id="txt-export" class="mono" readonly rows="12" style="width:100%;font-size:.75rem;'
+    + 'border:1px solid var(--line-2);border-radius:8px;padding:10px">'+esc(tsv)+'</textarea>'
+    + '<div class="linha" style="justify-content:flex-end;margin-top:12px">'
+    + '<button class="b" data-acao="selecionar-export">Selecionar tudo</button>'
+    + '<button class="b b-p" data-acao="fechar">Fechar</button></div>');
 }
 
 /* ============================ MODAIS ============================ */
@@ -4742,6 +4873,13 @@ async function exportar(e){
     }
     if(av.obs) txt += "\nObservações: "+av.obs+"\n";
   });
+  const tf = tabelaFinal(e);
+  if(tf.cols.length){
+    txt += "\n\nTABELA FINAL — RESULTADOS\n"+"-".repeat(60)+"\n";
+    txt += "Trat.\t"+tf.cols.map(c=>c.nome+(c.unidade?" ("+c.unidade+")":"")+(c.dias?" "+c.dias:"")).join("\t")+"\n";
+    tf.linhas.forEach(l=>{ txt += l.nome+"\t"+l.cels.join("\t")+"\n"; });
+    txt += "C.V. (%)\t"+tf.cols.map(c=>c.cv).join("\t")+"\n"+tf.nota+"\n";
+  }
   if(e.fotos.length){
     /* Agrupado por quadro e tratamento — a mesma ordem em que as fotos serão
        montadas na prancha do relatório. A etiqueta vai pronta, como legenda. */
@@ -4840,6 +4978,15 @@ document.addEventListener("click", async ev=>{
     const r = await CONVITE_INSTALAR.userChoice.catch(()=>null);
     CONVITE_INSTALAR = null; render();
     if(r && r.outcome === "accepted") toast("Instalado — abra pelo ícone daqui em diante");
+  }
+  else if(a==="travar-fatores"){
+    // nome em branco não vira texto travado: na análise ele sairia como "o fator"
+    const semNome = e.fatores.some(f=>!(f.nome||"").trim() || (f.niveis||[]).some(n=>!(n.nome||"").trim()));
+    if(semNome){ toast("Dê nome a todos os fatores e níveis antes de salvar"); return; }
+    e.fatoresTravado = true; marcarSujo(); render(); toast("Fatores salvos");
+  }
+  else if(a==="destravar-fatores"){
+    e.fatoresTravado = false; marcarSujo(); render();
   }
   else if(a==="travar-protocolo"){
     e.protocoloTravado = true; marcarSujo(); render(); toast("Protocolo salvo");
@@ -5263,6 +5410,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="limpar-filtro"){ TELA.filtro={}; render(); }
   else if(a==="exportar"){ exportar(e); }
   else if(a==="exportar-planilha"){ modalPlanilha(e); }
+  else if(a==="copiar-final"){ copiarTabelaFinal(e); }
   else if(a==="liberar"){
     if(!await confirmar("Descartar a versão ampliada das fotos? As miniaturas, as etiquetas e os links "
       + "do arquivo original continuam. Isso não tem volta.")) return;
