@@ -527,6 +527,9 @@ function migrar(){
     if(!Array.isArray(e.fatores)) e.fatores = [];
     if(!Array.isArray(e.relatorios)) e.relatorios = [];     // PDFs do relatório final
     if(typeof e.coordenadas !== "string") e.coordenadas = "";
+    // observação comum a todos os tratamentos (adjuvante, volume de calda…)
+    if(typeof e.obsTratamentos !== "string") e.obsTratamentos = "";
+    if(typeof e.obsTratTravado !== "boolean") e.obsTratTravado = !!e.obsTratamentos.trim();
     /* Fatores também travam depois de salvos. Começa travado quem já tem fator
        completo (nome e dois níveis com nome); o resto começa aberto. */
     if(typeof e.fatoresTravado !== "boolean"){
@@ -1716,7 +1719,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-30 · 20";
+const VERSAO_APP = "2026-09-30 · 21";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -4248,6 +4251,26 @@ function secaoAplicacoes(e){
   return s + '</div>';
 }
 
+/* Observação que vale para TODOS os tratamentos: o adjuvante e a dose, o volume
+   de calda, o bico. Fica logo abaixo da tabela, trava depois de salva (como o
+   protocolo) e entra no relatório exportado. */
+function secaoObsTrat(e){
+  const so = PERSIST.leitura;
+  const trav = so || e.obsTratTravado;
+  return '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Para todos os tratamentos</div>'
+    + '<h2>Observação</h2></div>'
+    + (so ? '' : trav ? '<button class="b b-s" data-acao="destravar-obstrat">Editar</button>'
+                      : '<button class="b b-s b-p" data-acao="travar-obstrat">Salvar</button>')
+    + '</div><div class="card card-p">'
+    + (trav
+        ? '<div class="protocolo" style="font-size:.95rem;white-space:pre-wrap">'
+          + (esc(e.obsTratamentos) || '<i style="color:var(--muted)">Nada anotado. Use <b>Editar</b> para escrever, por exemplo, '
+             + 'o adjuvante e a dose usados em todos os tratamentos.</i>')+'</div>'
+        : '<textarea class="serif" data-k="obstrat" data-campo="obstrat" rows="3" '
+          + 'placeholder="Ex.: Adjuvante Assist 0,5% v/v em todos os tratamentos, exceto a testemunha.">'
+          + esc(e.obsTratamentos||"")+'</textarea>')
+    + '</div></div>';
+}
 function abaTratamentos(e){
   const so = PERSIST.leitura;
   const fat = ehFatorial(e);
@@ -4256,9 +4279,10 @@ function abaTratamentos(e){
       + 'style="border:1px solid var(--line-2);background:var(--surface);border-radius:5px;'
       + 'padding:8px 9px;width:100%;min-height:38px;font-size:.86rem;'+(extra||'')+'">';
 
-  /* Aplicações vêm primeiro: são elas que definem as letras usadas na coluna
-     "Aplicação" de cada produto, logo abaixo. */
-  let s = secaoAplicacoes(e);
+  /* As seções são montadas separadas e juntadas no fim, na ordem de uso:
+     tratamentos, observação, aplicações, esquema fatorial. */
+  const secApl = secaoAplicacoes(e);
+  let s = '';
 
   /* ---- esquema: simples ou fatorial ---- */
   /* A escolha é declarada, não deduzida da presença de fatores: quem abre a aba
@@ -4353,7 +4377,11 @@ function abaTratamentos(e){
   }
   s += '</div>';
 
+  const secEsq = s; s = '';
   /* ---- tratamentos ---- */
+  /* A tabela vem primeiro: é o que se procura ao abrir a aba. Logo abaixo, a
+     observação que vale para todos (adjuvante, volume); depois as aplicações e
+     o esquema fatorial, que se configuram uma vez e raramente se reabrem. */
   const travado = so || e.travado;
   s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Tratamentos</div>'
     + '<h2>'+e.tratamentos.length+' × '+e.nRep+' repetições = '+(e.tratamentos.length*e.nRep)+' parcelas</h2></div>'
@@ -4413,7 +4441,7 @@ function abaTratamentos(e){
         + e.tratamentos.length+' tratamentos: os valores críticos são calculados na hora, '
         + 'sem limite de tabela.</div></div>';
     }
-    return s+'</div>';
+    return s+'</div>' + secaoObsTrat(e) + secApl + secEsq;
   }
 
   s += '<div class="grid" style="gap:10px">';
@@ -4491,7 +4519,7 @@ function abaTratamentos(e){
       + e.tratamentos.length+' tratamentos: os valores críticos dos testes são calculados '
       + 'na hora, sem limite de tabela.</div></div>';
   }
-  return s+'</div>';
+  return s+'</div>' + secaoObsTrat(e) + secApl + secEsq;
 }
 
 /* --------- AVALIAÇÕES --------- */
@@ -4908,23 +4936,86 @@ function opcoesFatorial(e){
   return {desdobrar: ["auto","sempre","nao"].indexOf(o.desdobrar) >= 0 ? o.desdobrar : "auto",
           tipos: o.tipos || {}};
 }
+/* Quem é a testemunha. Se alguém escolheu na aba Análise, vale a escolha;
+   senão o app reconhece: o tratamento adicional do fatorial, ou o que tem
+   "testemunha" no nome ou no produto. Sem nenhum desses: null. */
+function controleDe(e){
+  const n = e.tratamentos.length;
+  if(e.controleDef){
+    if(e.controle === -1) return null;                    // "nenhuma", escolhido de propósito
+    if(Number.isInteger(e.controle) && e.controle >= 0 && e.controle < n) return e.controle;
+  }
+  const fat = ehFatorial(e);
+  if(fat && fat.adicionais && fat.adicionais.length) return fat.adicionais[0];
+  const i = e.tratamentos.findIndex(t=>/testemunha/i.test(t.nome||"") || (t.produtos||[]).some(ehProdutoTestemunha));
+  return i >= 0 ? i : null;
+}
+/* A testemunha pode ficar FORA da análise de uma avaliação. É o caso clássico
+   da "% de controle": ela vale 0 em todas as parcelas por definição, não tem
+   variação, e na ANOVA só infla o F e quebra a homogeneidade. Fora, ela
+   continua na tabela como referência, sem letra. Quadrado latino não permite
+   (a casualização exige todos os tratamentos), e o Dunnett precisa dela. */
+function podeTirarTestemunha(e){
+  return controleDe(e) != null && e.delineamento !== "DQL" && e.tratamentos.length > 2 && e.teste !== "dunnett";
+}
+function testemunhaConstante(e, av){
+  const i = controleDe(e); if(i == null) return false;
+  const vals = matrizDe(e, av)[i].filter(v=>v!=null);
+  return vals.length === e.nRep && vals.every(v=>v === vals[0]);
+}
 function analisarAv(e, av){
   const orig = matrizDe(e, av);
+  const nR = e.nRep;
+  const iT = controleDe(e);
+  // quais tratamentos entram: todos, ou todos menos a testemunha
+  const tirar = !!av.semTest && podeTirarTestemunha(e);
+  const idx = e.tratamentos.map((_,i)=>i).filter(i=>!(tirar && i===iT));
+  const trats = idx.map(i=>e.tratamentos[i]);
+  const origS = idx.map(i=>orig[i]);
   const tf = TRANSF[av.transf] ? (av.transf || "") : "";
-  let dados = orig;
+  let dados = origS;
   if(tf){
-    dados = orig.map(l=>l.map(v=>v==null ? null : TRANSF[tf].f(v)));
+    dados = origS.map(l=>l.map(v=>v==null ? null : TRANSF[tf].f(v)));
     const ruins = dados.flat().filter(v=>v!=null && !Number.isFinite(v)).length;
     if(ruins) return {erro:"transf", transf:tf, ruins};
   }
   const somaO = orig.map(l=>l.reduce((a,v)=>a+(v==null?0:v),0));
-  const r = anova(dados, e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e), e.tratamentos,
-                  e.teste, croquiDe(e,av), alfaDe(e), e.controle, {tipos: opcoesFatorial(e).tipos, somaO});
-  if(r.ok){
-    r.transf = tf;
-    r.medias.forEach(m=>{ m.mo = somaO[m.i]/e.nRep; });
-    r.mediaO = somaO.reduce((a,x)=>a+x,0)/(e.tratamentos.length*e.nRep);
-    if(r.dunnett) r.dunnett.linhas.forEach(x=>{ x.mo = somaO[x.i]/e.nRep; });
+  const somaS = idx.map(i=>somaO[i]);
+  // sem a testemunha, o fatorial "3×3+1" vira o fatorial puro "3×3"
+  const fat = tirar ? ehFatorial({fatores:e.fatores, tratamentos:trats, delineamento:e.delineamento}) : ehFatorial(e);
+  /* Subdividida com tratamento adicional não tem análise definida: a testemunha
+     não pertence a nenhuma parcela de A. Antes o app analisava calado como
+     blocos comuns; agora avisa — tirando a testemunha, a subdividida roda. */
+  if(e.delineamento === "SPLIT" && !fat
+     && ehFatorial({fatores:e.fatores, tratamentos:e.tratamentos, delineamento:"DBC"}))
+    return {erro:"split_adicional"};
+  const ctrlS = iT != null && idx.indexOf(iT) >= 0 ? idx.indexOf(iT) : 0;
+  const r = anova(dados, idx.length, nR, e.delineamento, fat, trats,
+                  e.teste, tirar ? null : croquiDe(e,av), alfaDe(e), ctrlS, {tipos: opcoesFatorial(e).tipos, somaO: somaS});
+  if(!r.ok) return r;
+  r.transf = tf;
+  // os índices voltam a ser os do ensaio: a tela e a tabela final usam e.tratamentos[i]
+  r.medias.forEach(m=>{ m.mo = somaS[m.i]/nR; m.i = idx[m.i]; });
+  r.mediaO = somaS.reduce((a,x)=>a+x,0)/(idx.length*nR);
+  if(r.dunnett){
+    r.dunnett.linhas.forEach(x=>{ x.mo = somaS[x.i]/nR; x.i = idx[x.i]; });
+    r.dunnett.iCtrl = idx[r.dunnett.iCtrl];
+  }
+  if(tirar) r.fora = {i:iT, mo: somaO[iT]/nR};
+  /* Letras do teste escolhido E, ao lado, cada tratamento contra a testemunha
+     (Dunnett, com o mesmo resíduo) e quanto ele difere dela em %. */
+  if(e.compTest && !tirar && iT != null && !r.dunnett && !r.split){
+    const res = r.fonte.find(l=>l.nome==="Resíduo");
+    const d = dDunnett(r.alfa, Math.max(1, idx.length-1), r.glRes, true);
+    const dms = res && res.qm >= 0 ? d*Math.sqrt(2*res.qm/nR) : null;
+    const mT = r.medias.find(m=>m.i===iT);
+    if(mT){
+      r.vsTest = {iCtrl:iT, dms, linhas: r.medias.map(m=>({
+        i:m.i,
+        difere: m.i!==iT && dms!=null && Math.abs(m.media-mT.media) > dms,
+        rel: mostra(mT) !== 0 ? 100*(mostra(m)-mostra(mT))/Math.abs(mostra(mT)) : null
+      }))};
+    }
   }
   return r;
 }
@@ -4948,8 +5039,10 @@ function tabelaFinal(e){
     } else {
       r.medias.forEach(m=>{ cel[m.i] = fmt(mostra(m),cd)+" "+(m.letra||"a"); });
     }
+    // testemunha fora da análise: o valor aparece, sem letra (nota no rodapé)
+    if(r.fora) cel[r.fora.i] = fmt(r.fora.mo, cd);
     cols.push({ nome: av.nome || "Avaliação", unidade: av.unidade || "", dias: diasTexto(av),
-                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett, transf: r.transf });
+                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett, transf: r.transf, fora: !!r.fora });
   });
   const nomeT = (TESTES[e.teste]||TESTES.tukey).nome;
   // avaliação transformada: a nota diz qual e que as médias são as originais (como no SASM-Agri)
@@ -4966,7 +5059,12 @@ function tabelaFinal(e){
       + "C.V. = coeficiente de variação.";
   const linhas = e.tratamentos.map((t,i)=>({ t, nome: t.nome || ("T"+t.num), cels: cols.map(c=>c.cel[i] || "—") }))
                               .sort((a,b)=>a.t.num - b.t.num);
-  return { cols, linhas, fora, nota: nota + notaTransf };
+  const iT = controleDe(e);
+  const notaFora = cols.some(c=>c.fora) && iT != null
+    ? " A testemunha ("+(e.tratamentos[iT].nome||("T"+e.tratamentos[iT].num))+") não entrou na análise estatística de "
+      + cols.filter(c=>c.fora).map(c=>c.nome).join(", ")+"; seu valor é apresentado como referência."
+    : "";
+  return { cols, linhas, fora, nota: nota + notaTransf + notaFora };
 }
 
 function abaAnalise(e){
@@ -5000,18 +5098,31 @@ function abaAnalise(e){
         + Object.keys(ALFAS).map(a=>'<option value="'+a+'"'+(alfaDe(e)===Number(a)?" selected":"")+'>'
             + ALFAS[a]+'</option>').join("")
         + '</select></div>')
-    + (tst==="dunnett" && !so ? '<div class="campo" style="min-width:190px"><label>Testemunha</label>'
-        + '<select data-acao="set-controle" '+sel+'>'
-        + e.tratamentos.map((t,i)=>'<option value="'+i+'"'+((e.controle||0)===i?" selected":"")+'>'
-            + esc(t.num+". "+t.nome)+'</option>').join("")
-        + '</select></div>' : '')
+    /* A testemunha fica sempre à vista: o app a reconhece sozinho (adicional do
+       fatorial, ou "testemunha" no nome/produto) e aqui dá para corrigir. */
+    + (so ? '' : (()=>{
+        const iT = controleDe(e);
+        return '<div class="campo" style="min-width:190px"><label>Testemunha</label>'
+          + '<select data-acao="set-controle" '+sel+'>'
+          + '<option value="-1"'+(iT==null?" selected":"")+'>— nenhuma —</option>'
+          + e.tratamentos.map((t,i)=>'<option value="'+i+'"'+(iT===i?" selected":"")+'>'
+              + esc(t.num+". "+t.nome)+'</option>').join("")
+          + '</select></div>';
+      })())
     + '<div class="campo" style="min-width:190px"><label>Ordem das médias</label>'
         + '<select data-acao="set-ordem" '+sel+'>'
         + '<option value="num"'+((TELA.ordem||"num")==="num"?" selected":"")+'>Número do tratamento</option>'
         + '<option value="media"'+(TELA.ordem==="media"?" selected":"")+'>Da maior para a menor</option>'
         + '</select></div>'
     + '<span style="font-size:.78rem;color:var(--muted);flex:1;min-width:200px;align-self:flex-end;padding-bottom:10px">'
-    + esc(TESTES[tst].desc)+'</span></div>';
+    + esc(TESTES[tst].desc)+'</span></div>'
+    /* As letras do teste escolhido e, junto, cada tratamento contra a
+       testemunha — o que se pergunta primeiro num ensaio de produto. */
+    + (so || tst==="dunnett" || controleDe(e)==null ? '' :
+        '<label class="linha" style="gap:8px;margin-top:8px;cursor:pointer;font-size:.86rem;align-items:center">'
+        + '<input type="checkbox" data-acao="set-comptest"'+(e.compTest?' checked':'')
+        + ' style="width:18px;height:18px;accent-color:var(--accent)">'
+        + 'Comparar também cada tratamento com a testemunha (Dunnett e diferença em %)</label>');
 
   /* Opções do fatorial, no espírito do SISVAR: como tratar a interação e, para
      cada fator, se os níveis são categorias (comparar médias) ou números
@@ -5075,10 +5186,34 @@ function abaAnalise(e){
         + '</div>';
     }
 
+    // testemunha dentro ou fora da análise desta avaliação
+    if(!so && podeTirarTestemunha(e)){
+      const tT = e.tratamentos[controleDe(e)];
+      const nomeT = esc(tT.num+". "+tT.nome);
+      s += '<div class="linha" style="gap:8px;margin-bottom:10px;align-items:flex-end">'
+        + '<div class="campo" style="min-width:240px"><label>Testemunha ('+nomeT+')</label>'
+        + '<select data-acao="set-semtest" data-av="'+av.id+'" '+sel+'>'
+        + '<option value="dentro"'+(!av.semTest?" selected":"")+'>Entra na análise</option>'
+        + '<option value="fora"'+(av.semTest?" selected":"")+'>Fica fora — só como referência</option>'
+        + '</select></div></div>';
+      if(!av.semTest && testemunhaConstante(e, av)){
+        s += '<div class="aviso aviso-w" style="margin-bottom:10px"><span>&#9888;</span><div>'
+          + 'A testemunha tem o <b>mesmo valor em todas as parcelas</b> — típico de “% de controle”, em que ela '
+          + 'vale 0 por definição. Sem variação, ela infla o F e quebra a homogeneidade; o usual é deixá-la fora '
+          + 'da análise e mostrá-la só como referência.'
+          + '<button class="b b-s b-p" data-acao="tirar-testemunha" data-id="'+av.id+'" style="margin-top:8px">'
+          + 'Tirar a testemunha desta análise</button></div></div>';
+      }
+    }
+
     if(!r.ok){
       const msg = r.erro==="transf"
         ? 'A transformação <b>'+esc(TRANSF[r.transf].nome)+'</b> só se aplica a '+esc(TRANSF[r.transf].regra)
           + ', e esta avaliação tem <b>'+r.ruins+'</b> valor(es) fora disso. Escolha outra, ou volte para Nenhuma.'
+        : r.erro==="split_adicional"
+        ? 'Parcela subdividida não tem análise com testemunha adicional: ela não pertence a nenhuma parcela '
+          + 'do fator principal. Deixe a testemunha <b>fora da análise</b> (logo acima) — o fatorial vira puro e a '
+          + 'subdividida roda, com a testemunha como referência.'
         : r.erro==="faltam"
         ? 'Faltam <b>'+r.faltando+'</b> de '+r.total+' parcelas. Complete a malha para a análise rodar.'
         : r.erro==="poucos_trat" ? 'São necessários ao menos 2 tratamentos.'
@@ -5152,20 +5287,40 @@ function abaAnalise(e){
     const ord = TELA.ordem === "media"
       ? r.medias.slice().sort((a,b)=>b.media-a.media)
       : r.medias.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
-    const mx = Math.max(...r.medias.map(m=>mostra(m)));
+    // testemunha fora da análise: volta à tabela como referência, sem letra
+    const linhasT = ord.slice();
+    if(r.fora){
+      const lf = {i:r.fora.i, mo:r.fora.mo, media:r.fora.mo, fora:true};
+      if(TELA.ordem === "media") linhasT.push(lf);
+      else { const p = linhasT.findIndex(m=>e.tratamentos[m.i].num > e.tratamentos[lf.i].num); linhasT.splice(p<0?linhasT.length:p, 0, lf); }
+    }
+    const vs = r.vsTest;
+    const mx = Math.max(...linhasT.map(m=>mostra(m)));
     s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
-      + '<th>Tratamento</th><th style="text-align:left">Dose</th><th>Média</th><th>'+esc(nmT)+'</th><th style="width:32%">Comparação</th>'
-      + '</tr></thead><tbody>';
-    ord.forEach(m=>{
+      + '<th>Tratamento</th><th style="text-align:left">Dose</th><th>Média</th><th>'+esc(nmT)+'</th>'
+      + (vs ? '<th title="Diferença para a testemunha, em %, e o teste de Dunnett">vs. testemunha</th>' : '')
+      + '<th style="width:28%">Comparação</th></tr></thead><tbody>';
+    linhasT.forEach(m=>{
       const t = e.tratamentos[m.i];
       const pc = mx>0 ? Math.max(2, 100*mostra(m)/mx) : 0;
-      s += '<tr><td>'+esc(t.num+". "+t.nome)+'</td>'
+      const v = vs && vs.linhas.find(x=>x.i===m.i);
+      const ehT = vs && m.i === vs.iCtrl;
+      s += '<tr'+(m.fora||ehT?' style="background:var(--surface-3)"':'')+'><td>'+esc(t.num+". "+t.nome)
+        + (m.fora ? ' <span class="pill" style="margin-left:6px">fora da análise</span>' : ehT ? ' <span class="pill" style="margin-left:6px">testemunha</span>' : '')+'</td>'
         + '<td style="text-align:left;color:var(--muted)">'+(esc(doseTexto(t))||"—")+'</td>'
         + '<td>'+fmt(mostra(m))+'</td>'
-        + '<td><span class="letra">'+esc(m.letra||"a")+'</span></td>'
+        + '<td><span class="letra">'+(m.fora ? '—' : esc(m.letra||"a"))+'</span></td>'
+        + (vs ? '<td>'+(ehT || !v ? '—' : (v.rel!=null ? (v.rel>0?'+':'')+fmt(v.rel,1)+'% ' : '')
+                 + '<b class="letra">'+(v.difere?'*':'ns')+'</b>')+'</td>' : '')
         + '<td><div class="barra"><i style="width:'+pc.toFixed(1)+'%"></i></div></td></tr>';
     });
-    s += '</tbody></table></div></div>';
+    s += '</tbody></table></div>'
+      + (vs ? '<p style="font-size:.76rem;color:var(--muted)">vs. testemunha: diferença em % da média da testemunha; '
+              + '* difere dela e ns não difere pelo teste de Dunnett a '+alfaTexto(r.alfa)
+              + ' (DMS '+fmt(vs.dms)+(r.transf?', escala transformada':'')+').</p>' : '')
+      + (r.fora ? '<p style="font-size:.76rem;color:var(--muted)">A testemunha ficou fora da análise estatística desta avaliação; '
+                + 'o valor dela aparece só como referência.</p>' : '')
+      + '</div>';
   });
   return s + secaoTabelaFinal(e);
 }
@@ -5914,6 +6069,7 @@ async function exportar(e){
     });
   });
 
+  if((e.obsTratamentos||"").trim()) txt += "\nObservação (todos os tratamentos): "+e.obsTratamentos.trim()+"\n";
   e.avaliacoes.forEach(av=>{
     txt += "\n\nAVALIAÇÃO: "+av.nome+"\n"+"-".repeat(60)+"\n";
     txt += "Data: "+dataBr(av.data)+(av.dae?" | "+diasTexto(av):"")+(av.unidade?" | unidade: "+av.unidade:"")+"\n\n";
@@ -5963,17 +6119,33 @@ async function exportar(e){
         if(av.obs) txt += "\nObservações: "+av.obs+"\n";
         return;
       }
-      txt += "\nMédias e teste de "+nomeTeste+" ("+alfaTexto(r.alfa)+"):\nTratamento\tMédia\tGrupo\n";
-      const ordExp = TELA.ordem === "media"
+      const vs = r.vsTest;
+      txt += "\nMédias e teste de "+nomeTeste+" ("+alfaTexto(r.alfa)+"):\nTratamento\tMédia\tGrupo"
+           + (vs ? "\tvs. testemunha" : "") + "\n";
+      const ordExp = (TELA.ordem === "media"
         ? r.medias.slice().sort((a,b)=>b.media-a.media)
-        : r.medias.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
+        : r.medias.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num)).slice();
+      if(r.fora){
+        const lf = {i:r.fora.i, mo:r.fora.mo, fora:true};
+        const p = ordExp.findIndex(m=>e.tratamentos[m.i].num > e.tratamentos[lf.i].num);
+        if(TELA.ordem === "media") ordExp.push(lf); else ordExp.splice(p<0?ordExp.length:p, 0, lf);
+      }
       ordExp.forEach(m=>{
-        txt += e.tratamentos[m.i].num+". "+e.tratamentos[m.i].nome+"\t"+fmt(mostra(m))+"\t"+m.letra+"\n";
+        const v = vs && vs.linhas.find(x=>x.i===m.i);
+        txt += e.tratamentos[m.i].num+". "+e.tratamentos[m.i].nome+"\t"+fmt(mostra(m))+"\t"
+             + (m.fora ? "(fora da análise)" : m.letra)
+             + (vs ? "\t"+(m.i===vs.iCtrl || !v ? "(testemunha)" : (v.rel!=null ? (v.rel>0?"+":"")+fmt(v.rel,1)+"% " : "")+(v.difere?"*":"ns")) : "")
+             + "\n";
       });
       txt += "\nMédias seguidas da mesma letra não diferem entre si pelo teste de "
            + nomeTeste+" a "+alfaTexto(r.alfa)+".\n";
+      if(vs) txt += "vs. testemunha: diferença em % da testemunha; * difere e ns não difere pelo teste de Dunnett a "
+                  + alfaTexto(r.alfa)+" (DMS "+fmt(vs.dms)+").\n";
+      if(r.fora) txt += "A testemunha ficou fora da análise estatística desta avaliação; valor apenas como referência.\n";
     } else if(r.erro === "transf"){
       txt += "\n[análise não realizada: a transformação "+TRANSF[r.transf].nome+" não se aplica a estes dados]\n";
+    } else if(r.erro === "split_adicional"){
+      txt += "\n[análise não realizada: parcela subdividida com testemunha adicional — deixe a testemunha fora da análise]\n";
     } else {
       txt += "\n[análise não realizada: malha de dados incompleta]\n";
     }
@@ -6150,6 +6322,13 @@ document.addEventListener("click", async ev=>{
   else if(a==="destravar-fatores"){
     e.fatoresTravado = false; marcarSujo(); render();
   }
+  else if(a==="travar-obstrat"){
+    e.obsTratTravado = true; marcarSujo(); render(); toast("Observação salva");
+  }
+  else if(a==="destravar-obstrat"){
+    e.obsTratTravado = false; marcarSujo(); render();
+    const t = document.querySelector('[data-k="obstrat"]'); if(t) t.focus();
+  }
   else if(a==="travar-protocolo"){
     e.protocoloTravado = true; marcarSujo(); render(); toast("Protocolo salvo");
   }
@@ -6203,7 +6382,16 @@ document.addEventListener("click", async ev=>{
     delete ST.sync; SYNC = {rodando:false, quando:null, erro:null};
     marcarSujo(); render();
   }
-  else if(a==="abrir-exp"){ TELA={nome:"exp",expId:id,aba:"protocolo",avId:null}; render(); }
+  else if(a==="abrir-exp"){
+    /* Ensaio finalizado abre no relatório: é o que se procura nele depois de
+       pronto. Vale a etiqueta padrão ou qualquer uma com "finaliz" no nome. */
+    const alvo = ST.experimentos.find(x=>x.id===id);
+    const finalizado = alvo && (alvo.etiquetas||[]).some(eid=>{
+      const t = ST.etiquetas.find(x=>x.id===eid);
+      return eid === "et-finalizado" || (t && /finaliz/i.test(t.nome||""));
+    });
+    TELA={nome:"exp",expId:id,aba: finalizado ? "relatorio" : "protocolo",avId:null}; render();
+  }
   else if(a==="aba"){ TELA.aba=el.dataset.aba; render(); }
   else if(a==="novo-exp"){ modalExperimento(null); }
   else if(a==="editar-exp"){ modalExperimento(e); }
@@ -6605,14 +6793,20 @@ document.addEventListener("click", async ev=>{
   else if(a==="recomendar-transf"){
     // o "Recomendar" do SASM-Agri: Box-Cox sobre os dados ORIGINAIS da avaliação
     const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
-    const m = matrizDe(e, av);
+    let m = matrizDe(e, av);
     if(m.some(l=>l.some(v=>v==null))){ toast("Complete a malha antes de pedir a recomendação"); return; }
+    // testemunha fora da análise também fica fora da recomendação
+    if(av.semTest && podeTirarTestemunha(e)){ const iT = controleDe(e); m = m.filter((_,i)=>i!==iT); }
     const rec = recomendarTransf(m, e.delineamento, croquiDe(e, av), av.unidade);
     if(!rec){ toast("Não deu para calcular com esses dados"); return; }
     const atual = TRANSF[av.transf] ? (av.transf||"") : "";
     TELA.recomTransf = {av: av.id, txt: rec.porque + (rec.chave === atual ? " É a que já está em uso." : ""),
                         chave: rec.chave !== atual ? rec.chave : null};
     render();
+  }
+  else if(a==="tirar-testemunha"){
+    const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
+    av.semTest = true; marcarSujo(); render(); toast("Testemunha fora da análise desta avaliação");
   }
   else if(a==="aplicar-transf"){
     const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
@@ -6644,7 +6838,17 @@ document.addEventListener("change", ev=>{
   }
   if(el.dataset.acao==="set-controle"){
     const e = exp(); if(!e) return;
-    e.controle = Number(el.value); marcarSujo(); render(); return;
+    e.controle = Number(el.value); e.controleDef = true;   // escolha de alguém: vale mais que a detecção
+    marcarSujo(); render(); return;
+  }
+  if(el.dataset.acao==="set-comptest"){
+    const e = exp(); if(!e) return;
+    e.compTest = !!el.checked; marcarSujo(); render(); return;
+  }
+  if(el.dataset.acao==="set-semtest"){
+    const e = exp(); if(!e) return;
+    const av = e.avaliacoes.find(x=>x.id===el.dataset.av); if(!av) return;
+    av.semTest = el.value === "fora"; marcarSujo(); render(); return;
   }
   if(el.dataset.acao==="set-ordem"){ TELA.ordem = el.value; render(); return; }
   if(el.dataset.acao==="set-desdobrar"){
@@ -6750,6 +6954,7 @@ document.addEventListener("input", ev=>{
   const e = exp(); if(!e) return;
   const p = campo.split(".");
   if(p[0]==="protocolo"){ e.protocolo[p[1]] = el.value; }
+  else if(p[0]==="obstrat"){ e.obsTratamentos = el.value; }
   else if(p[0]==="trat"){
     const t = e.tratamentos.find(x=>x.id===p[1]); if(t) t[p[2]] = el.value;
   }
