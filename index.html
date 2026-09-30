@@ -1732,7 +1732,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-30 · 23";
+const VERSAO_APP = "2026-09-30 · 24";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -5035,8 +5035,13 @@ function analisarAv(e, av){
 /* Média para MOSTRAR: a original quando os dados foram transformados. */
 function mostra(x){ return x.mo != null ? x.mo : x.media; }
 
+/* Letras do fatorial na tabela final: "sempre" (padrão) ou só quando a
+   interação dá significativa ("sig"). Sem elas, a coluna usa as letras do teste
+   entre todos os tratamentos. */
+function letrasFatorialSempre(e){ return e.tfLetras !== "sig"; }
 function tabelaFinal(e){
   const cols = [], fora = [];
+  const fatE = ehFatorial(e);
   e.avaliacoes.forEach(av=>{
     const r = analisarAv(e, av);
     if(!r.ok){ fora.push(av.nome || "sem nome"); return; }
@@ -5052,32 +5057,84 @@ function tabelaFinal(e){
     } else {
       r.medias.forEach(m=>{ cel[m.i] = fmt(mostra(m),cd)+" "+(m.letra||"a"); });
     }
+    /* Fatorial de dois fatores: cada tratamento do fatorial leva o PAR de letras
+       do desdobramento — minúscula compara o 1º fator dentro do mesmo nível do
+       2º; maiúscula, o 2º dentro do mesmo nível do 1º (como no SISVAR). */
+    const F = r.fatorial;
+    let desd = null;
+    if(F && F.desd && F.desd.length === 2 && !r.dunnett){
+      const inter = F.pInt != null && F.pInt < r.alfa;
+      if(letrasFatorialSempre(e) || inter){
+        const [A, B] = F.desd;
+        e.tratamentos.forEach((t, i)=>{
+          const ai = t.niveis && t.niveis[A.fid], bj = t.niveis && t.niveis[B.fid];
+          if(!ai || !bj) return;                                   // testemunha: fica como está
+          const x = (A.blocos.find(b=>b.ids[0]===bj)||{niveis:[]}).niveis.find(n=>n.id===ai);
+          const up = (B.blocos.find(b=>b.ids[0]===ai)||{niveis:[]}).niveis.find(n=>n.id===bj);
+          if(!x) return;
+          const lo = A.quant ? "" : (x.letra||"");
+          const hi = B.quant ? "" : ((up && up.letra)||"").toUpperCase();
+          cel[i] = fmt(mostra(x), cd) + (lo||hi ? " "+lo+hi : "");
+        });
+        // a testemunha dentro da análise é comparada ao fatorial pelo contraste, não pelas letras
+        (F.adicionais||[]).forEach(a=>{
+          const i = e.tratamentos.findIndex(t=>t.num===a.num);
+          if(i >= 0) cel[i] = fmt(mostra(a), cd);
+        });
+        const ct = r.fonte.find(l=>l.adicional && /vs\. fatorial/.test(l.nome));
+        desd = {inter, A:A.fator, B:B.fator, quant:[A,B].filter(d=>d.quant).map(d=>d.fator),
+                teste:(A.blocos[0] && A.blocos[0].teste) || (B.blocos[0] && B.blocos[0].teste) || r.testeNome,
+                contraste: ct && ct.p!=null ? (ct.p < r.alfa ? "significativo" : "não significativo") : null};
+      }
+    }
     // testemunha fora da análise: o valor aparece, sem letra (nota no rodapé)
     if(r.fora) cel[r.fora.i] = fmt(r.fora.mo, cd);
     cols.push({ nome: av.nome || "Avaliação", unidade: av.unidade || "", dias: diasTexto(av),
-                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett, transf: r.transf, fora: !!r.fora });
+                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett, transf: r.transf, fora: !!r.fora, desd });
   });
   const nomeT = (TESTES[e.teste]||TESTES.tukey).nome;
+  const alfaT = alfaTexto(alfaDe(e));
   // avaliação transformada: a nota diz qual e que as médias são as originais (como no SASM-Agri)
   const transfs = [...new Set(cols.filter(c=>c.transf).map(c=>TRANSF[c.transf].nome))];
   const notaTransf = transfs.length
     ? " Para a análise, os dados de "+cols.filter(c=>c.transf).map(c=>c.nome).join(", ")
       + " foram transformados em "+transfs.join(" / ")+"; as médias apresentadas são as originais."
     : "";
-  const nota = cols.some(c=>c.dunnett)
-    ? "* difere da testemunha e ns não difere pelo teste de Dunnett a "+alfaTexto(alfaDe(e))
-      + " de probabilidade de erro. C.V. = coeficiente de variação."
-    : "Médias seguidas da mesma letra na coluna não apresentam diferença estatística significativa "
-      + "pelo teste de "+nomeT+" a "+alfaTexto(alfaDe(e))+" de probabilidade de erro. "
-      + "C.V. = coeficiente de variação.";
-  const linhas = e.tratamentos.map((t,i)=>({ t, nome: t.nome || ("T"+t.num), cels: cols.map(c=>c.cel[i] || "—") }))
+  const comDesd = cols.filter(c=>c.desd), semDesd = cols.filter(c=>!c.desd && !c.dunnett);
+  let nota = "";
+  if(comDesd.length){
+    const d = comDesd[0].desd;
+    nota += "Médias seguidas pela mesma letra minúscula não diferem entre níveis de "+d.A+" dentro do mesmo nível de "+d.B
+      + ", e pela mesma letra maiúscula, entre níveis de "+d.B+" dentro do mesmo nível de "+d.A
+      + ", pelo teste de "+d.teste+" a "+alfaT+" de probabilidade de erro"
+      + (semDesd.length || cols.some(c=>c.dunnett) ? " (em "+comDesd.map(c=>c.nome).join(", ")+")" : "") + ".";
+    if(d.quant.length) nota += " "+d.quant.join(" e ")+": fator quantitativo, sem letras — ver a regressão.";
+    const semInter = comDesd.filter(c=>!c.desd.inter);
+    if(semInter.length) nota += " Interação não significativa em "+semInter.map(c=>c.nome).join(", ")+".";
+    const ct = comDesd.filter(c=>c.desd.contraste);
+    if(ct.length && e.tratamentos.some(t=>!Object.keys(t.niveis||{}).length))
+      nota += " A testemunha é comparada ao fatorial pelo contraste testemunha vs. fatorial ("
+        + ct.map(c=>c.nome+": "+c.desd.contraste).join("; ")+").";
+  }
+  if(semDesd.length){
+    nota += (nota ? " " : "") + "Médias seguidas da mesma letra na coluna"
+      + (comDesd.length ? " (em "+semDesd.map(c=>c.nome).join(", ")+")" : "")
+      + " não apresentam diferença estatística significativa pelo teste de "+nomeT+" a "+alfaT+" de probabilidade de erro.";
+  }
+  if(cols.some(c=>c.dunnett)){
+    nota += (nota ? " " : "") + "* difere da testemunha e ns não difere pelo teste de Dunnett a "+alfaT+" de probabilidade de erro.";
+  }
+  nota += " C.V. = coeficiente de variação.";
+  const linhas = e.tratamentos.map((t,i)=>({ t, nome: t.nome || ("T"+t.num),
+                   fat: fatE ? (fatorTexto(e,t) || "Testemunha") : "", cels: cols.map(c=>c.cel[i] || "—") }))
                               .sort((a,b)=>a.t.num - b.t.num);
   const iT = controleDe(e);
   const notaFora = cols.some(c=>c.fora) && iT != null
     ? " A testemunha ("+(e.tratamentos[iT].nome||("T"+e.tratamentos[iT].num))+") não entrou na análise estatística de "
       + cols.filter(c=>c.fora).map(c=>c.nome).join(", ")+"; seu valor é apresentado como referência."
     : "";
-  return { cols, linhas, fora, nota: nota + notaTransf + notaFora };
+  return { cols, linhas, fora, temFat: !!fatE, nomeFat: fatE ? fatE.map(f=>f.nome||"Fator").join(" × ") : "",
+           nota: nota + notaTransf + notaFora };
 }
 
 function abaAnalise(e){
@@ -5672,44 +5729,55 @@ document.addEventListener("toggle", ev=>{
 }, true);
 function htmlTabelaTrat(tf){
   let s = '<div class="tab-box"><table class="dados tab-final"><thead><tr><th>Trat.</th>'
+    + (tf.temFat ? '<th style="text-align:left">'+esc(tf.nomeFat)+'</th>' : '')
     + tf.cols.map(c=>'<th>'+esc(c.nome)
         + (c.unidade ? '<br><span class="tf-sub">('+esc(c.unidade)+')</span>' : '')
         + (c.dias ? '<br><span class="tf-sub">'+esc(c.dias)+'</span>' : '')+'</th>').join("")
     + '</tr></thead><tbody>';
   tf.linhas.forEach(l=>{
-    s += '<tr><td>'+esc(l.nome)+'</td>'+l.cels.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>';
+    s += '<tr><td>'+esc(l.nome)+'</td>'
+      + (tf.temFat ? '<td style="text-align:left;color:var(--ink-2);font-family:Archivo,sans-serif;white-space:nowrap">'+esc(l.fat)+'</td>' : '')
+      + l.cels.map(x=>'<td>'+esc(x)+'</td>').join("")+'</tr>';
   });
-  return s + '<tr class="tf-cv"><td>C.V. (%)</td>'+tf.cols.map(c=>'<td>'+c.cv+'</td>').join("")+'</tr>'
+  return s + '<tr class="tf-cv"><td>C.V. (%)</td>'+(tf.temFat ? '<td></td>' : '')
+    + tf.cols.map(c=>'<td>'+c.cv+'</td>').join("")+'</tr>'
     + '</tbody></table></div>'
     + '<p style="font-size:.76rem;color:var(--muted);max-width:80ch">'+esc(tf.nota)+'</p>';
 }
 function secaoTabelaFinal(e){
   const tf = tabelaFinal(e);
   const tff = tabelaFinalFatorial(e);
-  const usaFat = !!(tff && tff.blocos.length);
-  let s = '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Resultados</div>'
-    + '<h2>Tabela final</h2></div>'
-    + (tf.cols.length || usaFat ? '<button class="b b-s" data-acao="copiar-final">Copiar tabela</button>' : '')
-    + '</div>';
-  if(!tf.cols.length && !usaFat){
-    return s + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
-      + 'Aparece quando pelo menos uma avaliação estiver com a malha completa.</p></div>';
+  const temDupla = !!(tff && tff.blocos.length);
+  const so = PERSIST.leitura;
+  /* A tabela final — todos os tratamentos, todas as avaliações — abre junto com
+     a aba; dá para recolher. As de dupla entrada ficam num quadro fechado. */
+  let s = '<details class="sanfona" data-sanfona="tabela-final"'+(sanfonaAberta("tabela-final", true)?' open':'')+'>'
+    + '<summary><div class="sanfona-cab"><div><h3>Tabela final</h3><div class="sanfona-resumo">'
+    + 'Todos os tratamentos, '+tf.cols.length+' avaliaç'+(tf.cols.length===1?'ão':'ões')+'</div></div></div></summary>'
+    + '<div class="sanfona-corpo">';
+  if(!tf.cols.length){
+    return s + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch;margin-top:10px">'
+      + 'Aparece quando pelo menos uma avaliação estiver com a malha completa.</p></div></details>';
   }
-  if(usaFat){
-    // fatorial: a tabela de dupla entrada de cada avaliação; a por tratamento fica recolhida
-    s += tff.blocos.map(htmlGradeFatorial).join("");
-    if(tf.cols.length){
-      const k = "tf-trat";
-      s += '<details class="sanfona" data-sanfona="'+k+'"'+(sanfonaAberta(k,false)?' open':'')+'>'
-        + '<summary>Tabela por tratamento (todas as avaliações)</summary>'+htmlTabelaTrat(tf)+'</details>';
-    }
-  } else {
-    s += htmlTabelaTrat(tf);
+  s += '<div class="linha" style="gap:8px;margin:10px 0 4px;align-items:center">'
+    + (tf.temFat && (e.fatores||[]).filter(f=>(f.niveis||[]).length>=2).length===2 && !so
+        ? '<span style="font-size:.8rem;color:var(--muted)">Letras maiúsculas e minúsculas do fatorial:</span>'
+          + '<div class="seg" role="group" aria-label="Quando mostrar as letras do fatorial">'
+          + '<button class="seg-b'+(letrasFatorialSempre(e)?' on':'')+'" data-acao="set-tfletras" data-v="sempre" aria-pressed="'+letrasFatorialSempre(e)+'">Sempre</button>'
+          + '<button class="seg-b'+(!letrasFatorialSempre(e)?' on':'')+'" data-acao="set-tfletras" data-v="sig" aria-pressed="'+(!letrasFatorialSempre(e))+'">Só com interação significativa</button>'
+          + '</div>'
+        : '')
+    + '<button class="b b-s" data-acao="copiar-final" style="margin-left:auto">Copiar tabela</button></div>';
+  s += htmlTabelaTrat(tf);
+  if(tf.fora.length) s += '<p style="font-size:.76rem;color:var(--muted)">Fora da tabela por falta de dados: '
+    + tf.fora.map(esc).join(", ")+'.</p>';
+  s += '</div></details>';
+  if(temDupla){
+    s += '<details class="sanfona" data-sanfona="tf-dupla"'+(sanfonaAberta("tf-dupla", false)?' open':'')+'>'
+      + '<summary><div class="sanfona-cab"><div><h3>Tabelas de dupla entrada</h3><div class="sanfona-resumo">'
+      + 'Fatorial: uma tabela por avaliação, '+esc(tf.nomeFat)+'</div></div></div></summary>'
+      + '<div class="sanfona-corpo">' + tff.blocos.map(htmlGradeFatorial).join("") + '</div></details>';
   }
-  const fora = usaFat ? tff.fora : tf.fora;
-  s += (fora.length ? '<p style="font-size:.76rem;color:var(--muted)">Fora da tabela por falta de dados: '
-        + fora.map(esc).join(", ")+'.</p>' : '')
-    + '</div>';
   return s;
 }
 
@@ -5717,7 +5785,6 @@ function secaoTabelaFinal(e){
    de verdade (HTML), colada no Excel cai em colunas (texto com TAB). */
 async function copiarTabelaFinal(e){
   const tf = tabelaFinal(e);
-  const tff = tabelaFinalFatorial(e);
   const bd = 'border-top:1px solid #000;border-bottom:1px solid #000;';
   const cel = (x,tag,est) => '<'+tag+' style="padding:3px 10px;text-align:center;'+(est||'')+'">'+esc(x)+'</'+tag+'>';
   const serif = 'font-family:\'Times New Roman\',serif;';
@@ -5726,25 +5793,13 @@ async function copiarTabelaFinal(e){
     + '<tr>'+cab.map(x=>cel(x,"th",bd)).join("")+'</tr>'
     + corpo.map((l,i)=>'<tr>'+l.map(x=>cel(x,"td", i===corpo.length-1 ? bd : "")).join("")+'</tr>').join("")
     + '</table>';
-  let html = "", tsv = "";
-  if(tff && tff.blocos.length){
-    // fatorial: uma tabela de dupla entrada por avaliação, com as letras maiúsculas e minúsculas
-    tff.blocos.forEach(b=>{
-      const corpo = b.linhas.concat([["C.V. (%)", b.cv].concat(new Array(Math.max(0, b.cab.length-2)).fill(""))]);
-      html += '<p style="'+serif+'font-size:11pt;font-weight:bold;margin:12pt 0 4pt">'+esc(b.titulo)+(b.sub?' '+esc(b.sub):'')+'</p>'
-        + tabelaWord(b.cab, corpo)
-        + b.extras.map(x=>'<p style="'+serif+'font-size:10pt;margin:2pt 0">'+esc(x)+'</p>').join("")
-        + '<p style="'+serif+'font-size:9pt">'+esc(b.nota)+'</p>';
-      tsv += b.titulo+(b.sub?" "+b.sub:"")+"\n"+[b.cab].concat(corpo).map(l=>l.join("\t")).join("\n")+"\n"
-        + b.extras.map(x=>x+"\n").join("") + b.nota + "\n\n";
-    });
-  } else {
-    const cab = ["Trat."].concat(tf.cols.map(c=>c.nome + (c.unidade ? " ("+c.unidade+")" : "")));
-    const corpo = tf.linhas.map(l=>[l.nome].concat(l.cels))
-                    .concat([["C.V. (%)"].concat(tf.cols.map(c=>c.cv))]);
-    tsv = [cab].concat(corpo).map(l=>l.join("\t")).join("\n") + "\n\n" + tf.nota;
-    html = tabelaWord(cab, corpo) + '<p style="'+serif+'font-size:9pt">'+esc(tf.nota)+'</p>';
-  }
+  // a tabela final é a de todos os tratamentos (no fatorial, com a coluna dos níveis e as letras aA)
+  const cab = ["Trat."].concat(tf.temFat ? [tf.nomeFat] : [])
+                .concat(tf.cols.map(c=>c.nome + (c.unidade ? " ("+c.unidade+")" : "")));
+  const corpo = tf.linhas.map(l=>[l.nome].concat(tf.temFat ? [l.fat] : []).concat(l.cels))
+                  .concat([["C.V. (%)"].concat(tf.temFat ? [""] : []).concat(tf.cols.map(c=>c.cv))]);
+  const tsv = [cab].concat(corpo).map(l=>l.join("\t")).join("\n") + "\n\n" + tf.nota;
+  const html = tabelaWord(cab, corpo) + '<p style="'+serif+'font-size:9pt">'+esc(tf.nota)+'</p>';
   try{
     await navigator.clipboard.write([new ClipboardItem({
       "text/html": new Blob([html], {type:"text/html"}),
@@ -6063,24 +6118,62 @@ async function exportarPlanilha(e, ids){
   const tsv = tudo.map(l=>l.join("\t")).join("\n");
   const nome = (e.nome.replace(/[^\w\sÀ-ÿ-]/g,"").replace(/\s+/g,"-").toLowerCase()
                 || "ensaio")+".csv";
-  try{
-    const arq = new File([csv], nome, {type:"text/csv"});
-    if(navigator.canShare && navigator.canShare({files:[arq]})){
-      await navigator.share({files:[arq]});
-      return;
-    }
-  }catch(err){ if(err && err.name === "AbortError") return; }
+  /* Três saídas, à escolha: salvar o arquivo (no PC abre o "Salvar como" e dá
+     para escolher a pasta), compartilhar (WhatsApp, e-mail, Drive) ou copiar
+     para colar direto no Excel. Antes só compartilhava — no PC isso não servia. */
+  PLANILHA = {csv, tsv, nome, linhas: linhas.length};
+  let podeCompartilhar = false;
+  try{ podeCompartilhar = !!(navigator.canShare && navigator.canShare({files:[new File([csv], nome, {type:"text/csv"})]})); }catch(err){}
+  abrirModal('<h2>Planilha pronta</h2>'
+    + '<p style="font-size:.86rem;color:var(--muted);margin-bottom:14px">'+linhas.length+' linhas · '
+    + avs.length+' avaliaç'+(avs.length===1?'ão':'ões')+' · arquivo <b>'+esc(nome)+'</b> (abre no Excel já em colunas)</p>'
+    + '<div class="grid" style="gap:8px">'
+    + '<button class="b b-p" data-acao="planilha-salvar">&#11015; Salvar no aparelho</button>'
+    + (podeCompartilhar ? '<button class="b" data-acao="planilha-compartilhar">Compartilhar (WhatsApp, e-mail, Drive…)</button>' : '')
+    + '<button class="b" data-acao="planilha-copiar">Copiar para colar no Excel</button>'
+    + '</div>'
+    + '<div class="linha" style="justify-content:flex-end;margin-top:14px">'
+    + '<button class="b b-s" data-acao="fechar">Fechar</button></div>');
+}
+let PLANILHA = null;
+async function planilhaSalvar(){
+  const p = PLANILHA; if(!p) return;
+  const blob = new Blob([p.csv], {type:"text/csv"});
+  // PC (Chrome/Edge): janela "Salvar como", escolhendo a pasta
+  if(window.showSaveFilePicker){
+    try{
+      const h = await window.showSaveFilePicker({suggestedName: p.nome,
+        types:[{description:"Planilha (CSV)", accept:{"text/csv":[".csv"]}}]});
+      const w = await h.createWritable(); await w.write(blob); await w.close();
+      fecharModal(); toast("Planilha salva onde você escolheu"); return;
+    }catch(err){ if(err && err.name === "AbortError") return; }
+  }
+  // celular e demais navegadores: vai para a pasta de downloads
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = p.nome;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 6000);
+  fecharModal(); toast("Planilha salva na pasta de downloads");
+}
+async function planilhaCompartilhar(){
+  const p = PLANILHA; if(!p) return;
+  try{ await navigator.share({files:[new File([p.csv], p.nome, {type:"text/csv"})]}); fecharModal(); }
+  catch(err){ if(!(err && err.name === "AbortError")) toast("Não deu para compartilhar daqui — use Salvar"); }
+}
+async function planilhaCopiar(){
+  const p = PLANILHA; if(!p) return;
   try{
     // colado no Excel, o TAB já separa as colunas sem passar por importação
-    await navigator.clipboard.writeText(tsv);
-    toast(linhas.length+" linhas copiadas — cole direto no Excel");
+    await navigator.clipboard.writeText(p.tsv);
+    fecharModal(); toast(p.linhas+" linhas copiadas — cole direto no Excel");
     return;
   }catch(err){}
+  fecharModal();
   abrirModal('<h2>Dados para a planilha</h2>'
     + '<p style="font-size:.85rem;color:var(--muted);margin-bottom:10px">'
     + 'Toque em <b>Selecionar tudo</b>, copie e cole no Excel — as colunas se separam sozinhas.</p>'
     + '<textarea id="txt-export" class="mono" readonly rows="14" style="width:100%;font-size:.75rem;'
-    + 'border:1px solid var(--line-2);border-radius:8px;padding:10px">'+esc(tsv)+'</textarea>'
+    + 'border:1px solid var(--line-2);border-radius:8px;padding:10px">'+esc(p.tsv)+'</textarea>'
     + '<div class="linha" style="justify-content:flex-end;margin-top:12px">'
     + '<button class="b" data-acao="selecionar-export">Selecionar tudo</button>'
     + '<button class="b b-p" data-acao="fechar">Fechar</button></div>');
@@ -6318,21 +6411,22 @@ async function exportar(e){
     }
     if(av.obs) txt += "\nObservações: "+av.obs+"\n";
   });
+  const tf = tabelaFinal(e);
+  if(tf.cols.length){
+    txt += "\n\nTABELA FINAL — RESULTADOS\n"+"-".repeat(60)+"\n";
+    txt += "Trat.\t"+(tf.temFat ? tf.nomeFat+"\t" : "")
+         + tf.cols.map(c=>c.nome+(c.unidade?" ("+c.unidade+")":"")+(c.dias?" "+c.dias:"")).join("\t")+"\n";
+    tf.linhas.forEach(l=>{ txt += l.nome+"\t"+(tf.temFat ? l.fat+"\t" : "")+l.cels.join("\t")+"\n"; });
+    txt += "C.V. (%)\t"+(tf.temFat ? "\t" : "")+tf.cols.map(c=>c.cv).join("\t")+"\n"+tf.nota+"\n";
+  }
   const tff = tabelaFinalFatorial(e);
   if(tff && tff.blocos.length){
-    txt += "\n\nTABELA FINAL — FATORIAL (dupla entrada)\n"+"-".repeat(60)+"\n";
+    txt += "\n\nTABELAS DE DUPLA ENTRADA (fatorial)\n"+"-".repeat(60)+"\n";
     tff.blocos.forEach(b=>{
       txt += "\n"+b.titulo+(b.sub?" "+b.sub:"")+"\n"+b.cab.join("\t")+"\n"
            + b.linhas.map(l=>l.join("\t")).join("\n")+"\nC.V. (%)\t"+b.cv+"\n"
            + b.extras.map(x=>x+"\n").join("") + b.nota+"\n";
     });
-  }
-  const tf = tabelaFinal(e);
-  if(tf.cols.length){
-    txt += "\n\nTABELA FINAL — RESULTADOS"+(tff && tff.blocos.length ? " POR TRATAMENTO" : "")+"\n"+"-".repeat(60)+"\n";
-    txt += "Trat.\t"+tf.cols.map(c=>c.nome+(c.unidade?" ("+c.unidade+")":"")+(c.dias?" "+c.dias:"")).join("\t")+"\n";
-    tf.linhas.forEach(l=>{ txt += l.nome+"\t"+l.cels.join("\t")+"\n"; });
-    txt += "C.V. (%)\t"+tf.cols.map(c=>c.cv).join("\t")+"\n"+tf.nota+"\n";
   }
   if(e.fotos.length){
     /* Agrupado por quadro e tratamento — a mesma ordem em que as fotos serão
@@ -6966,6 +7060,12 @@ document.addEventListener("click", async ev=>{
   else if(a==="exportar"){ exportar(e); }
   else if(a==="exportar-planilha"){ modalPlanilha(e); }
   else if(a==="copiar-final"){ copiarTabelaFinal(e); }
+  else if(a==="planilha-salvar"){ planilhaSalvar(); }
+  else if(a==="planilha-compartilhar"){ planilhaCompartilhar(); }
+  else if(a==="planilha-copiar"){ planilhaCopiar(); }
+  else if(a==="set-tfletras"){
+    e.tfLetras = el.dataset.v === "sig" ? "sig" : "sempre"; marcarSujo(); render();
+  }
   else if(a==="recomendar-transf"){
     // o "Recomendar" do SASM-Agri: Box-Cox sobre os dados ORIGINAIS da avaliação
     const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
