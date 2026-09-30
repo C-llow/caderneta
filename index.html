@@ -1,5 +1,5 @@
 <!doctype html>
-<title>Caderneta de Campo</title>
+<title>C-llow P &amp; D</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1E7B3C">
 <meta name="description" content="Ensaios agronômicos: protocolo, croqui, avaliações, fotos por tratamento e análise estatística. Funciona sem internet.">
@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icone-192-v5.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Caderneta">
+<meta name="apple-mobile-web-app-title" content="C-llow P &amp; D">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
@@ -1732,7 +1732,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-30 · 25";
+const VERSAO_APP = "2026-09-30 · 26";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -2896,8 +2896,8 @@ async function montarBackup(comFotos){
 
   arquivos.unshift({nome:"caderneta.json", dados: cod.encode(JSON.stringify(copia, null, 1))});
   arquivos.push({nome:"LEIA-ME.txt", dados: cod.encode(
-      "Backup da Caderneta de Campo — Caltech R&D\r\n"
-    + "==========================================\r\n\r\n"
+      "Backup do C-llow P & D — Caltech R&D\r\n"
+    + "====================================\r\n\r\n"
     + "Gerado em ....... " + new Date().toLocaleString("pt-BR") + "\r\n"
     + "Versão do app ... " + VERSAO_APP + "\r\n"
     + "Ensaios ......... " + resumo.ensaios + "\r\n"
@@ -2924,7 +2924,7 @@ async function salvarBackup(blob, nome){
     try{
       const h = await window.showSaveFilePicker({
         suggestedName: nome,
-        types:[{description:"Backup da Caderneta", accept:{"application/zip":[".zip"]}}]
+        types:[{description:"Backup do C-llow P & D", accept:{"application/zip":[".zip"]}}]
       });
       const w = await h.createWritable();
       await w.write(blob); await w.close();
@@ -2950,7 +2950,7 @@ async function fazerBackup(comFotos){
   try{
     const {blob, resumo} = await montarBackup(comFotos);
     const dia = new Date().toISOString().slice(0,10);
-    const nome = "caderneta-" + dia + (comFotos ? "-completo" : "-dados") + ".zip";
+    const nome = "cllow-pd-" + dia + (comFotos ? "-completo" : "-dados") + ".zip";
     const msg = await salvarBackup(blob, nome);
     if(msg) toast(msg + " — " + mb(blob.size) + ", " + resumo.ensaios + " ensaios"
                   + (comFotos ? ", " + resumo.fotosNesteArquivo + " fotos" : "")
@@ -3282,7 +3282,7 @@ function barraTopo(sub, voltar){
     /* Sem subtítulo na tela inicial: o que havia ali era um texto que eu tinha
        inventado, e trocá-lo por uma contagem só encheu linguiça. Dentro de um
        ensaio o subtítulo diz cultura, cultivar e local — aí ele informa. */
-    + '<div class="topo-tit"><b>'+esc(voltar?sub.t:"Caderneta de Campo")+'</b>'
+    + '<div class="topo-tit"><b>'+esc(voltar?sub.t:"C-llow P & D")+'</b>'
     + (voltar ? '<span>'+esc(sub.s)+'</span>' : '')+'</div>'
     + '<div class="salvo" title="'+(PERSIST.erro?esc(PERSIST.erro):"")+'">'+statusHtml()+'</div>'
     /* Engrenagem desenhada, e não o caractere ⚙: o caractere saía com 12 px e
@@ -3480,8 +3480,8 @@ function telaHome(){
 
   if(CONVITE_INSTALAR){
     s += '<div class="aviso aviso-i" style="margin-bottom:18px"><span>&#11015;</span><div>'
-      + '<b>Instale a caderneta neste aparelho.</b> Instalada, ela abre sem internet — '
-      + 'é o que faz ela servir no campo.'
+      + '<b>Instale o app neste aparelho.</b> Instalado, ele abre sem internet — '
+      + 'é o que faz ele servir no campo.'
       + '<button class="b b-s b-p" data-acao="instalar" style="margin-top:8px">Instalar</button>'
       + '</div></div>';
   }

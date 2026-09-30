@@ -1,11 +1,11 @@
-/* Service worker da Caderneta de Campo.
+/* Service worker do C-llow P & D (antiga Caderneta de Campo).
    O trabalho dele é um só: fazer o app abrir sem internet. Ele guarda os arquivos
    da aplicação no aparelho e serve essa cópia quando a rede não responde.
 
    Os DADOS do caderno não passam por aqui — moram no IndexedDB, que é do app.
    Este arquivo cuida só do "programa", não do que você escreveu nele. */
 
-const VERSAO = "caderneta-v6";
+const VERSAO = "caderneta-v7";
 const ARQUIVOS = [
   ".",
   "index.html",
