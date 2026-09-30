@@ -1732,7 +1732,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-30 · 24";
+const VERSAO_APP = "2026-09-30 · 25";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -5783,23 +5783,67 @@ function secaoTabelaFinal(e){
 
 /* Copia a tabela final em dois formatos de uma vez: colada no Word vira tabela
    de verdade (HTML), colada no Excel cai em colunas (texto com TAB). */
+/* A tabela final no formato de relatório do Word, pelo modelo da Caltech:
+   Calibri 10 pt, título "Tabela X." em cima, filete em cima e embaixo do
+   cabeçalho e em cima e embaixo da linha do C.V., sem linhas verticais, e a
+   nota "(1)" em 9 pt embaixo. Cada célula leva um parágrafo com margem zero:
+   sem isso o Word aplica o espaçamento do estilo Normal (8 pt depois, 1,08
+   entre linhas) dentro da célula, e a tabela colada saía enorme. */
+function wordTabelaFinal(e, tf){
+  tf = tf || tabelaFinal(e);
+  const fonte = "font-family:Calibri,Arial,sans-serif;font-size:10pt;color:#000;";
+  const p0 = (t, extra) => '<p style="margin:0;padding:0;line-height:normal;mso-line-height-rule:at-least;'
+    + fonte+(extra||'')+'">'+t+'</p>';
+  const linhaGrossa = "1.5pt solid #000", linhaFina = ".75pt solid #000";
+  const td = (conteudo, cima, baixo, alinha) => '<td style="padding:1.5pt 8pt;border-left:none;border-right:none;'
+    + 'border-top:'+(cima||'none')+';border-bottom:'+(baixo||'none')+';'
+    + 'vertical-align:bottom;white-space:nowrap;text-align:'+(alinha||'center')+'">'
+    + conteudo + '</td>';
+  /* Cabeçalho: nome da avaliação quebrado em linhas curtas (como no modelo,
+     "Quantidade / de Vagens por / Planta") e, embaixo, a unidade — em negrito.
+     Numa linha só, um nome longo alargava a coluna e a tabela inteira. */
+  const quebra = (txt, max) => {
+    const linhas = []; let atual = "";
+    String(txt).split(/\s+/).forEach(p=>{
+      if(atual && (atual+" "+p).length > max){ linhas.push(atual); atual = p; }
+      else atual = atual ? atual+" "+p : p;
+    });
+    if(atual) linhas.push(atual);
+    return linhas.map(esc).join('<br>');
+  };
+  const cabs = ['Tratamentos'].concat(tf.temFat ? [esc(tf.nomeFat)] : [])
+    .concat(tf.cols.map(c=>quebra(c.nome, 14)+(c.unidade ? '<br>('+esc(c.unidade)+')' : '')));
+  let h = '<p style="margin:0 0 3pt 0;line-height:normal;'+fonte+'font-size:11pt">Tabela X. '
+    + esc(e.nome || "Resultados")+'</p>'
+    + '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:none;width:auto;'
+    + 'mso-table-layout-alt:autofit;mso-padding-alt:0 8pt 0 8pt;margin-left:auto;margin-right:auto">';
+  h += '<tr>' + cabs.map((c,k)=>td(p0(k===0 ? c : c, 'font-weight:bold;text-align:'+(k===0?'left':'center')),
+          linhaGrossa, linhaFina, k===0?'left':'center')).join("") + '</tr>';
+  tf.linhas.forEach((l, i)=>{
+    const ultima = i === tf.linhas.length - 1;
+    const b = ultima ? linhaFina : null;
+    h += '<tr>' + td(p0(esc(l.nome), 'text-align:left'), null, b, 'left')
+      + (tf.temFat ? td(p0(esc(l.fat), 'text-align:left'), null, b, 'left') : '')
+      + l.cels.map(x=>td(p0(esc(x).replace(/ /g, '&nbsp;&nbsp;'), 'text-align:center'), null, b)).join("")
+      + '</tr>';
+  });
+  h += '<tr>' + td(p0('C.V. (%)', 'text-align:left'), linhaFina, linhaGrossa, 'left')
+    + (tf.temFat ? td(p0('&nbsp;'), linhaFina, linhaGrossa) : '')
+    + tf.cols.map(c=>td(p0(esc(c.cv), 'text-align:center'), linhaFina, linhaGrossa)).join("")
+    + '</tr></table>';
+  h += '<p style="margin:3pt 0 0 0;line-height:normal;'+fonte+'font-size:9pt"><sup>(1)</sup> - '+esc(tf.nota)+'</p>';
+  // para o Excel: texto com TAB, uma linha por tratamento
+  const cabT = ["Tratamentos"].concat(tf.temFat ? [tf.nomeFat] : [])
+                .concat(tf.cols.map(c=>c.nome + (c.unidade ? " ("+c.unidade+")" : "")));
+  const corpoT = tf.linhas.map(l=>[l.nome].concat(tf.temFat ? [l.fat] : []).concat(l.cels))
+                  .concat([["C.V. (%)"].concat(tf.temFat ? [""] : []).concat(tf.cols.map(c=>c.cv))]);
+  const tsv = [cabT].concat(corpoT).map(l=>l.join("\t")).join("\n") + "\n\n(1) - " + tf.nota;
+  return {html: h, tsv};
+}
+
 async function copiarTabelaFinal(e){
   const tf = tabelaFinal(e);
-  const bd = 'border-top:1px solid #000;border-bottom:1px solid #000;';
-  const cel = (x,tag,est) => '<'+tag+' style="padding:3px 10px;text-align:center;'+(est||'')+'">'+esc(x)+'</'+tag+'>';
-  const serif = 'font-family:\'Times New Roman\',serif;';
-  // uma tabela no padrão do relatório: filete em cima e embaixo do cabeçalho e na última linha
-  const tabelaWord = (cab, corpo) => '<table style="border-collapse:collapse;'+serif+'font-size:11pt">'
-    + '<tr>'+cab.map(x=>cel(x,"th",bd)).join("")+'</tr>'
-    + corpo.map((l,i)=>'<tr>'+l.map(x=>cel(x,"td", i===corpo.length-1 ? bd : "")).join("")+'</tr>').join("")
-    + '</table>';
-  // a tabela final é a de todos os tratamentos (no fatorial, com a coluna dos níveis e as letras aA)
-  const cab = ["Trat."].concat(tf.temFat ? [tf.nomeFat] : [])
-                .concat(tf.cols.map(c=>c.nome + (c.unidade ? " ("+c.unidade+")" : "")));
-  const corpo = tf.linhas.map(l=>[l.nome].concat(tf.temFat ? [l.fat] : []).concat(l.cels))
-                  .concat([["C.V. (%)"].concat(tf.temFat ? [""] : []).concat(tf.cols.map(c=>c.cv))]);
-  const tsv = [cab].concat(corpo).map(l=>l.join("\t")).join("\n") + "\n\n" + tf.nota;
-  const html = tabelaWord(cab, corpo) + '<p style="'+serif+'font-size:9pt">'+esc(tf.nota)+'</p>';
+  const {html, tsv} = wordTabelaFinal(e, tf);
   try{
     await navigator.clipboard.write([new ClipboardItem({
       "text/html": new Blob([html], {type:"text/html"}),
