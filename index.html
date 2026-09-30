@@ -268,6 +268,7 @@ table.malha td input{
   min-height:44px;
 }
 table.malha td input:focus{background:var(--accent-soft); outline:2px solid var(--accent); outline-offset:-2px}
+table.malha td input.invalido{color:var(--erro); font-weight:700; background:color-mix(in srgb, var(--erro) 12%, transparent)}
 table.malha td.media{background:var(--surface-3); font-family:"IBM Plex Mono",monospace; font-size:.88rem; font-weight:600; padding:9px 11px}
 table.malha tr.rodape th,table.malha tr.rodape td{background:var(--surface-2); font-size:.82rem; padding:8px 10px; font-family:"IBM Plex Mono",monospace}
 /* No croqui a coluna "Parcela" é só um número de ordem: fica estreita, e o
@@ -646,46 +647,6 @@ function arranjoTexto(fat){
 }
 
 /* ============================ ESTATÍSTICA ============================ */
-// Tabela q de Tukey, alfa = 0,05. Linhas: GL do resíduo. Colunas: nº de tratamentos (2..12).
-const QTAB = {
-  1:[17.97,26.98,32.82,37.08,40.41,43.12,45.40,47.36,49.07,50.59,51.96],
-  2:[6.08,8.33,9.80,10.88,11.74,12.44,13.03,13.54,13.99,14.39,14.75],
-  3:[4.50,5.91,6.82,7.50,8.04,8.48,8.85,9.18,9.46,9.72,9.95],
-  4:[3.93,5.04,5.76,6.29,6.71,7.05,7.35,7.60,7.83,8.03,8.21],
-  5:[3.64,4.60,5.22,5.67,6.03,6.33,6.58,6.80,6.99,7.17,7.32],
-  6:[3.46,4.34,4.90,5.30,5.63,5.90,6.12,6.32,6.49,6.65,6.79],
-  7:[3.34,4.16,4.68,5.06,5.36,5.61,5.82,6.00,6.16,6.30,6.43],
-  8:[3.26,4.04,4.53,4.89,5.17,5.40,5.60,5.77,5.92,6.05,6.18],
-  9:[3.20,3.95,4.41,4.76,5.02,5.24,5.43,5.59,5.74,5.87,5.98],
-  10:[3.15,3.88,4.33,4.65,4.91,5.12,5.30,5.46,5.60,5.72,5.83],
-  11:[3.11,3.82,4.26,4.57,4.82,5.03,5.20,5.35,5.49,5.61,5.71],
-  12:[3.08,3.77,4.20,4.51,4.75,4.95,5.12,5.27,5.39,5.51,5.61],
-  13:[3.06,3.73,4.15,4.45,4.69,4.88,5.05,5.19,5.32,5.43,5.53],
-  14:[3.03,3.70,4.11,4.41,4.64,4.83,4.99,5.13,5.25,5.36,5.46],
-  15:[3.01,3.67,4.08,4.37,4.59,4.78,4.94,5.08,5.20,5.31,5.40],
-  16:[3.00,3.65,4.05,4.33,4.56,4.74,4.90,5.03,5.15,5.26,5.35],
-  17:[2.98,3.63,4.02,4.30,4.52,4.70,4.86,4.99,5.11,5.21,5.31],
-  18:[2.97,3.61,4.00,4.28,4.49,4.67,4.82,4.96,5.07,5.17,5.27],
-  19:[2.96,3.59,3.98,4.25,4.47,4.65,4.79,4.92,5.04,5.14,5.23],
-  20:[2.95,3.58,3.96,4.23,4.45,4.62,4.77,4.90,5.01,5.11,5.20],
-  24:[2.92,3.53,3.90,4.17,4.37,4.54,4.68,4.81,4.92,5.01,5.10],
-  30:[2.89,3.49,3.85,4.10,4.30,4.46,4.60,4.72,4.82,4.92,5.00],
-  40:[2.86,3.44,3.79,4.04,4.23,4.39,4.52,4.63,4.73,4.82,4.90],
-  60:[2.83,3.40,3.74,3.98,4.16,4.31,4.44,4.55,4.65,4.73,4.81],
-  120:[2.80,3.36,3.68,3.92,4.10,4.24,4.36,4.47,4.56,4.64,4.71],
-  1e9:[2.77,3.31,3.63,3.86,4.03,4.17,4.29,4.39,4.47,4.55,4.62]
-};
-function qTukey(k, gl){
-  if(k<2) return null;
-  const col = Math.min(k,12) - 2;
-  const gls = Object.keys(QTAB).map(Number).sort((a,b)=>a-b);
-  if(gl<=1) return QTAB[1][col];
-  let lo=gls[0], hi=gls[gls.length-1];
-  for(let i=0;i<gls.length;i++){ if(gls[i]<=gl) lo=gls[i]; if(gls[i]>=gl){ hi=gls[i]; break; } }
-  if(lo===hi) return QTAB[lo][col];
-  const t = (gl-lo)/(hi-lo);
-  return QTAB[lo][col] + t*(QTAB[hi][col]-QTAB[lo][col]);
-}
 // distribuição F -> p-valor, via função beta incompleta regularizada
 function lnGama(x){
   const g=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,
@@ -777,32 +738,18 @@ function mediasDoFator(f, trats, somaT, nRep, qmErro, glErro, nObs, teste, alfa)
   const lst = f.niveis.map((nv,k)=>({i:k, nome:nv.nome, media: n[nv.id] ? soma[nv.id]/n[nv.id] : null}))
                       .filter(x=>x.media!=null).sort((a,b)=>b.media-a.media);
   const rep = nObs || n[f.niveis[0].id] || nRep;
-  const ep = qmErro>=0 ? Math.sqrt(qmErro/rep) : null;
-  let dms=null;
-  if(teste==="fisher")      dms = qmErro>=0 ? tCrit(alfa,glErro)*Math.sqrt(2*qmErro/rep) : null;
-  else if(teste==="duncan") dms = ep!=null ? rDuncan(alfa, 2, Math.round(glErro))*ep : null;
-  else if(teste!=="sk"){
-    const q = qCrit(alfa, f.niveis.length, Math.round(glErro));
-    dms = (q!=null && ep!=null) ? q*ep : null;
-  }
-  if(teste==="sk"){
-    const L = scottKnott(lst, qmErro, rep, glErro, alfa);
-    lst.forEach(x=>{ x.letra = L[x.i] || "a"; });
-  } else if(teste==="duncan" && ep!=null){
-    const ls = letrasPorAmplitude(lst, p => rDuncan(alfa, p, Math.round(glErro))*ep);
-    lst.forEach((x,k)=>{ x.letra = ls[k]; });
-  } else if(dms!=null){
-    const ls = letrasPorDMS(lst, dms);
-    lst.forEach((x,k)=>{ x.letra = ls[k]; });
-  }
-  return {fator:f.nome||"Fator", dms, linhas:lst, soma, n};
+  const r = letrasDoTeste(lst, teste, qmErro, glErro, rep, alfa);
+  lst.forEach((x,k)=>{ x.letra = r.letras[k]; });
+  return {fator:f.nome||"Fator", dms:r.dms, teste:r.nome, linhas:lst, soma, n};
 }
 
 /* ---- Distribuição da amplitude estudentizada, calculada por quadratura ----
    Tabelas impressas limitam o app ao que couber nelas (12 tratamentos, 5%).
    Integrando a distribuição, qualquer número de tratamentos e qualquer nível
-   de significância saem do mesmo código — e o resultado é conferido contra a
-   tabela clássica em `autoTeste()`. */
+   de significância saem do mesmo código. Conferido em 29/09/2026 contra as
+   tabelas clássicas a 5% (Tukey k=2…12 e Duncan p=2…10, GL 2…120): diferença
+   máxima de 0,14%, o arredondamento da própria tabela. As tabelas, que
+   ficavam aqui sem uso, saíram na v20. */
 function phi(z){                                   // densidade normal padrão
   return 0.3989422804014327*Math.exp(-z*z/2);
 }
@@ -916,51 +863,6 @@ function dDunnett(alfa, m, gl, bilateral){
   return _cacheD[chave] = (lo+hi)/2;
 }
 
-/* Amplitudes significativas de Duncan a 5% (r_p). Linhas: GL do resíduo.
-   Colunas: p = número de médias abrangidas pela comparação (2..10).
-   Ao contrário de Tukey, o valor cresce com p: comparar extremos distantes
-   exige mais que comparar vizinhos. A coluna p=2 coincide com a de Tukey
-   para k=2 — é assim que esta tabela se confere. */
-const DTAB = {
-  1:[17.97,17.97,17.97,17.97,17.97,17.97,17.97,17.97,17.97],
-  2:[6.085,6.085,6.085,6.085,6.085,6.085,6.085,6.085,6.085],
-  3:[4.501,4.516,4.516,4.516,4.516,4.516,4.516,4.516,4.516],
-  4:[3.927,4.013,4.033,4.033,4.033,4.033,4.033,4.033,4.033],
-  5:[3.635,3.749,3.797,3.814,3.814,3.814,3.814,3.814,3.814],
-  6:[3.461,3.587,3.649,3.680,3.694,3.697,3.697,3.697,3.697],
-  7:[3.344,3.477,3.548,3.588,3.611,3.622,3.626,3.626,3.626],
-  8:[3.261,3.399,3.475,3.521,3.549,3.566,3.575,3.579,3.579],
-  9:[3.199,3.339,3.420,3.470,3.502,3.523,3.536,3.544,3.547],
-  10:[3.151,3.293,3.376,3.430,3.465,3.489,3.505,3.516,3.522],
-  11:[3.113,3.256,3.342,3.397,3.435,3.462,3.480,3.493,3.501],
-  12:[3.082,3.225,3.313,3.370,3.410,3.439,3.459,3.474,3.484],
-  13:[3.055,3.200,3.289,3.348,3.389,3.419,3.442,3.458,3.470],
-  14:[3.033,3.178,3.268,3.329,3.372,3.403,3.426,3.444,3.457],
-  15:[3.014,3.160,3.250,3.312,3.356,3.389,3.413,3.432,3.446],
-  16:[2.998,3.144,3.235,3.298,3.343,3.376,3.402,3.422,3.437],
-  17:[2.984,3.130,3.222,3.285,3.331,3.366,3.392,3.412,3.429],
-  18:[2.971,3.118,3.210,3.274,3.321,3.356,3.383,3.405,3.421],
-  19:[2.960,3.107,3.199,3.264,3.311,3.347,3.375,3.397,3.415],
-  20:[2.950,3.097,3.190,3.255,3.303,3.339,3.368,3.391,3.409],
-  24:[2.919,3.066,3.160,3.226,3.276,3.315,3.345,3.370,3.390],
-  30:[2.888,3.035,3.131,3.199,3.250,3.290,3.322,3.349,3.371],
-  40:[2.858,3.006,3.102,3.171,3.224,3.266,3.300,3.328,3.352],
-  60:[2.829,2.976,3.073,3.143,3.198,3.241,3.277,3.307,3.333],
-  120:[2.800,2.947,3.045,3.116,3.172,3.217,3.254,3.287,3.314],
-  1e9:[2.772,2.918,3.017,3.089,3.146,3.193,3.232,3.265,3.294]
-};
-function zDuncan(p, gl){
-  if(p < 2) return null;
-  const col = Math.min(p,10) - 2;
-  const gls = Object.keys(DTAB).map(Number).sort((a,b)=>a-b);
-  if(gl<=1) return DTAB[1][col];
-  let lo=gls[0], hi=gls[gls.length-1];
-  for(let i=0;i<gls.length;i++){ if(gls[i]<=gl) lo=gls[i]; if(gls[i]>=gl){ hi=gls[i]; break; } }
-  if(lo===hi) return DTAB[lo][col];
-  const t=(gl-lo)/(hi-lo);
-  return DTAB[lo][col] + t*(DTAB[hi][col]-DTAB[lo][col]);
-}
-
 /* Letras quando o valor crítico DEPENDE de quantas médias a comparação abrange
    (Duncan). Como as médias estão ordenadas, o par mais distante de um grupo é
    o par das pontas: basta testá-lo para saber se o grupo se sustenta. */
@@ -1002,18 +904,18 @@ function letrasPorDMS(ord, dms){
    verossimilhança e repete em cada metade. Ao contrário de Tukey e Fisher,
    não produz grupos sobrepostos — cada média cai em exatamente um grupo. */
 function scottKnott(medias, qmRes, nRep, glRes, alfa){
-  const k0 = medias.length;
-  const varMedias = (()=>{
-    const m = medias.reduce((a,x)=>a+x.media,0)/k0;
-    return medias.reduce((a,x)=>a+(x.media-m)*(x.media-m),0);
-  })();
-  // estimativa combinada da variância das médias
-  const sigma2 = (varMedias + glRes*(qmRes/nRep)) / (k0 + glRes);
   const grupos = [];
   (function partir(lista){
     if(lista.length === 1){ grupos.push(lista); return; }
     const k = lista.length;
     const total = lista.reduce((a,x)=>a+x.media,0);
+    /* Variância das médias estimada DENTRO do grupo que se está partindo, como
+       no método original (Scott & Knott, 1974) e no SISVAR. Até a v19 usava a
+       do conjunto inteiro em todas as etapas: nos subgrupos ela saía inflada,
+       e o teste deixava de separar médias que diferiam. */
+    const mG = total/k;
+    const ssG = lista.reduce((a,x)=>a+(x.media-mG)*(x.media-mG), 0);
+    const sigma2 = (ssG + glRes*(qmRes/nRep)) / (k + glRes);
     let melhor=-Infinity, corte=-1, s1=0;
     for(let i=0;i<k-1;i++){
       s1 += lista[i].media;
@@ -1037,6 +939,347 @@ function scottKnott(medias, qmRes, nRep, glRes, alfa){
   return letras;
 }
 
+/* Letras de um conjunto de médias, JÁ ORDENADAS da maior para a menor, pelo
+   teste escolhido. Uma regra só para tratamentos, médias de cada fator e
+   parcela subdividida. Até a v19 havia três cópias, e duas procuravam o teste
+   pelo nome antigo ("fisher"): quem escolhia t (DMS) via as médias dos fatores
+   comparadas por Tukey, sem aviso — e o Duncan também caía no Tukey ali.
+   Dunnett não se aplica entre níveis de um fator (não há testemunha entre
+   eles): nesse caso vale Tukey, e `nome` diz isso na tabela. */
+function letrasDoTeste(ord, teste, qmErro, glErro, rep, alfa){
+  const gl = Math.round(glErro);
+  const ep = qmErro>=0 ? Math.sqrt(qmErro/rep) : null;
+  const n = ord.length;
+  let letras = new Array(n).fill("a"), dms = null, nome, critNome = "", critValor = null;
+  if(teste === "sk"){
+    nome = TESTES.sk.nome;
+    const L = scottKnott(ord, qmErro, rep, glErro, alfa);
+    letras = ord.map(x=>L[x.i] || "a");
+  } else if(teste === "duncan"){
+    nome = TESTES.duncan.nome;
+    dms = ep!=null ? rDuncan(alfa, 2, gl)*ep : null;            // p=2 separa vizinhos
+    critNome = "r(2…"+n+", "+gl+")"; critValor = rDuncan(alfa, n, gl);
+    if(ep!=null) letras = letrasPorAmplitude(ord, p => rDuncan(alfa, p, gl)*ep);
+  } else if(teste === "t"){
+    nome = TESTES.t.nome;
+    const t = tCrit(alfa, glErro);
+    dms = qmErro>=0 ? t*Math.sqrt(2*qmErro/rep) : null;
+    critNome = "t("+gl+")"; critValor = t;
+    if(dms!=null) letras = letrasPorDMS(ord, dms);
+  } else if(teste === "snk"){
+    /* SNK (como no SISVAR): a amplitude estudentizada ao MESMO alfa, mas com p =
+       quantas médias o par abrange. Vizinhos exigem menos que os extremos. */
+    nome = TESTES.snk.nome;
+    dms = ep!=null ? qCrit(alfa, 2, gl)*ep : null;
+    critNome = "q(2…"+n+", "+gl+")"; critValor = qCrit(alfa, n, gl);
+    if(ep!=null) letras = letrasPorAmplitude(ord, p => qCrit(alfa, p, gl)*ep);
+  } else if(teste === "bonferroni"){
+    // t com o alfa repartido entre as n(n−1)/2 comparações — o "t protegido" do SISVAR
+    nome = TESTES.bonferroni.nome;
+    const aB = alfa / Math.max(1, n*(n-1)/2);
+    const t = tCrit(aB, glErro);
+    dms = qmErro>=0 ? t*Math.sqrt(2*qmErro/rep) : null;
+    critNome = "t("+gl+"; α/"+(n*(n-1)/2)+")"; critValor = t;
+    if(dms!=null) letras = letrasPorDMS(ord, dms);
+  } else if(teste === "scheffe"){
+    // Scheffé (SASM-Agri): vale para qualquer contraste; é o mais exigente de todos
+    nome = TESTES.scheffe.nome;
+    const F = fCrit(alfa, n-1, glErro);
+    dms = (F!=null && qmErro>=0) ? Math.sqrt((n-1)*F*2*qmErro/rep) : null;
+    critNome = "F("+(n-1)+", "+gl+")"; critValor = F;
+    if(dms!=null) letras = letrasPorDMS(ord, dms);
+  } else {
+    nome = TESTES.tukey.nome;
+    const q = qCrit(alfa, n, gl);
+    dms = (q!=null && ep!=null) ? q*ep : null;
+    critNome = "q("+n+", "+gl+")"; critValor = q;
+    if(dms!=null) letras = letrasPorDMS(ord, dms);
+  }
+  return {letras, dms, nome, critNome, critValor};
+}
+
+/* F crítico: o valor com P(F > f) = alfa, por bisseção sobre o p-valor. */
+const _cacheF = {};
+function fCrit(alfa, gl1, gl2){
+  if(!(gl1>0) || !(gl2>0)) return null;
+  const chave = alfa+"|"+gl1+"|"+Math.round(gl2*100);
+  if(_cacheF[chave] != null) return _cacheF[chave];
+  let lo = 1e-6, hi = 1e4;
+  for(let i=0;i<80;i++){
+    const m = (lo+hi)/2;
+    if(pValorF(m, gl1, gl2) > alfa) lo = m; else hi = m;
+  }
+  return _cacheF[chave] = (lo+hi)/2;
+}
+
+/* ============ PRESSUPOSTOS DA ANÁLISE ============
+   A ANOVA supõe resíduos normais e variâncias iguais entre tratamentos. O app
+   testa as duas coisas em toda avaliação e avisa quando falham — é quando se
+   pensa numa transformação (o botão "Recomendar" do SASM-Agri, logo abaixo). */
+
+/* Inversa da normal padrão (Acklam), erro relativo < 1,2e-9. */
+function normInv(p){
+  if(p<=0) return -Infinity; if(p>=1) return Infinity;
+  const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+  const b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01];
+  const c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+  const d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+  const pl=0.02425;
+  if(p<pl){ const q=Math.sqrt(-2*Math.log(p)); return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if(p>1-pl){ const q=Math.sqrt(-2*Math.log(1-p)); return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  const q=p-0.5, r=q*q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+/* Shapiro-Wilk, pelo algoritmo de Royston (1995) — o mesmo do R. Serve de 3 a
+   5000 valores. Devolve W e o p-valor; p pequeno = resíduos não normais. */
+function shapiroWilk(xs){
+  const x = xs.filter(Number.isFinite).slice().sort((a,b)=>a-b);
+  const n = x.length;
+  if(n < 3) return null;
+  const media = x.reduce((a,b)=>a+b,0)/n;
+  const ss = x.reduce((a,v)=>a+(v-media)*(v-media),0);
+  if(!(ss > 1e-12*Math.max(1, media*media)*n)) return null;   // tudo igual: não há o que testar
+  const pol = (c, u) => c.reduce((a,ci,i)=>a+ci*Math.pow(u,i),0);
+  let a = new Array(n).fill(0);
+  if(n === 3){ a[0] = -Math.SQRT1_2; a[2] = Math.SQRT1_2; }
+  else{
+    const m = x.map((_,i)=>normInv((i+1-0.375)/(n+0.25)));
+    const mm = m.reduce((s,v)=>s+v*v,0);
+    const u = 1/Math.sqrt(n);
+    const an = m[n-1]/Math.sqrt(mm) + pol([0,0.221157,-0.147981,-2.071190,4.434685,-2.706056], u);
+    if(n > 5){
+      const an1 = m[n-2]/Math.sqrt(mm) + pol([0,0.042981,-0.293762,-1.752461,5.682633,-3.582633], u);
+      const fi = (mm - 2*m[n-1]*m[n-1] - 2*m[n-2]*m[n-2]) / (1 - 2*an*an - 2*an1*an1);
+      for(let i=2;i<n-2;i++) a[i] = m[i]/Math.sqrt(fi);
+      a[n-1] = an; a[n-2] = an1; a[0] = -an; a[1] = -an1;
+    } else {
+      const fi = (mm - 2*m[n-1]*m[n-1]) / (1 - 2*an*an);
+      for(let i=1;i<n-1;i++) a[i] = m[i]/Math.sqrt(fi);
+      a[n-1] = an; a[0] = -an;
+    }
+  }
+  const W = Math.min(1, Math.pow(a.reduce((s,ai,i)=>s+ai*x[i],0), 2) / ss);
+  let p;
+  if(n === 3){
+    p = Math.max(0, Math.min(1, (6/Math.PI)*(Math.asin(Math.sqrt(W)) - Math.asin(Math.sqrt(0.75)))));
+  } else if(n <= 11){
+    const g = -2.273 + 0.459*n;
+    const mu = 0.5440 - 0.39978*n + 0.025054*n*n - 0.0006714*n*n*n;
+    const sg = Math.exp(1.3822 - 0.77857*n + 0.062767*n*n - 0.0020322*n*n*n);
+    const w1 = -Math.log(g - Math.log(1-W));
+    p = 1 - Phi((w1 - mu)/sg);
+  } else {
+    const L = Math.log(n);
+    const mu = -1.5861 - 0.31082*L - 0.083751*L*L + 0.0038915*L*L*L;
+    const sg = Math.exp(-0.4803 - 0.082676*L + 0.0030302*L*L);
+    p = 1 - Phi((Math.log(1-W) - mu)/sg);
+  }
+  return {W, p: Math.max(0, Math.min(1, p)), n};
+}
+/* Bartlett: as variâncias dos tratamentos são iguais? Qui-quadrado com k−1 GL. */
+function bartlett(grupos){
+  const g = grupos.filter(x=>x.n>1);
+  const k = g.length; if(k < 2) return null;
+  const N = g.reduce((a,x)=>a+x.n,0);
+  const sp = g.reduce((a,x)=>a+(x.n-1)*x.s2,0)/(N-k);
+  if(!(sp > 0) || g.some(x=>!(x.s2 > 0))) return null;
+  const num = (N-k)*Math.log(sp) - g.reduce((a,x)=>a+(x.n-1)*Math.log(x.s2),0);
+  const cor = 1 + (g.reduce((a,x)=>a+1/(x.n-1),0) - 1/(N-k)) / (3*(k-1));
+  const chi = num/cor, gl = k-1;
+  return {chi, gl, p: Math.max(0, Math.min(1, 1 - gamaInc(gl/2, chi/2)))};
+}
+
+/* ============ TRANSFORMAÇÕES ============
+   As do SISVAR e do SASM-Agri que servem a dado de campo. A análise (F, letras,
+   CV) é feita nos dados transformados; as médias mostradas são as ORIGINAIS,
+   na unidade da avaliação — como sai num relatório. Arco-seno em graus. */
+const TRANSF = {
+  "":      {nome:"Nenhuma",            f:x=>x},
+  raiz:    {nome:"√x",                 f:x=>x>=0 ? Math.sqrt(x) : NaN,          regra:"valores ≥ 0"},
+  raiz05:  {nome:"√(x + 0,5)",         f:x=>x>=-0.5 ? Math.sqrt(x+0.5) : NaN,   regra:"valores ≥ −0,5"},
+  raiz1:   {nome:"√(x + 1)",           f:x=>x>=-1 ? Math.sqrt(x+1) : NaN,       regra:"valores ≥ −1"},
+  log10:   {nome:"log₁₀(x)",           f:x=>x>0 ? Math.log10(x) : NaN,          regra:"valores > 0"},
+  log10p1: {nome:"log₁₀(x + 1)",       f:x=>x>-1 ? Math.log10(x+1) : NaN,       regra:"valores > −1"},
+  ln:      {nome:"ln(x)",              f:x=>x>0 ? Math.log(x) : NaN,            regra:"valores > 0"},
+  arcsen:  {nome:"arcsen √(x/100)",    f:x=>(x>=0 && x<=100) ? Math.asin(Math.sqrt(x/100))*180/Math.PI : NaN,
+            regra:"porcentagens de 0 a 100"}
+};
+/* SQ do resíduo do modelo do delineamento — o que o Box-Cox precisa, sem letras. */
+function sqResModelo(dados, delin, col){
+  const nT = dados.length, nR = dados[0].length;
+  const sT = new Array(nT).fill(0), sB = new Array(nR).fill(0);
+  let s=0, s2=0, N=0;
+  for(let t=0;t<nT;t++) for(let b=0;b<nR;b++){ const v=dados[t][b]; s+=v; s2+=v*v; N++; sT[t]+=v; sB[b]+=v; }
+  const C = s*s/N;
+  let sq = s2 - C - (sT.reduce((a,x)=>a+x*x,0)/nR - C);
+  if(delin !== "DIC") sq -= sB.reduce((a,x)=>a+x*x,0)/nT - C;
+  if(delin === "DQL" && col){
+    const sC = new Array(nT).fill(0);
+    for(let t=0;t<nT;t++) for(let b=0;b<nR;b++) sC[col[t][b]] += dados[t][b];
+    sq -= sC.reduce((a,x)=>a+x*x,0)/nT - C;
+  }
+  return sq;
+}
+/* "Recomendar" do SASM-Agri: Box-Cox (1964). Procura o λ que torna o modelo
+   mais normal e homogêneo, e traduz no que existe na lista: λ≈1 nenhuma,
+   λ≈½ raiz, λ≈0 log. Porcentagem com muitos valores perto de 0 ou 100 ganha a
+   angular. Devolve a chave da transformação e o porquê, em português. */
+function recomendarTransf(dados, delin, col, unidade){
+  const vals = dados.flat().filter(v=>v!=null);
+  if(!vals.length || vals.some(v=>!Number.isFinite(v))) return null;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const temZero = min <= 0;
+  const desloc = temZero ? 1 - min : 0;
+  const N = vals.length;
+  const slog = vals.reduce((a,v)=>a+Math.log(v+desloc),0);
+  let melhor = {lam:1, ll:-Infinity};
+  const curva = [];
+  for(let lam=-2; lam<=2.0001; lam+=0.05){
+    const tr = dados.map(l=>l.map(v=>{ const y=v+desloc; return Math.abs(lam)<1e-9 ? Math.log(y) : (Math.pow(y,lam)-1)/lam; }));
+    const sq = sqResModelo(tr, delin, col);
+    if(!(sq > 0)) continue;
+    const ll = -N/2*Math.log(sq/N) + (lam-1)*slog;
+    curva.push({lam, ll});
+    if(ll > melhor.ll) melhor = {lam, ll};
+  }
+  if(!Number.isFinite(melhor.ll)) return null;
+  // intervalo de 95%: λ com log-verossimilhança até 1,92 abaixo do máximo
+  const ic = curva.filter(c=>c.ll >= melhor.ll - 1.92).map(c=>c.lam);
+  const ini = Math.min(...ic), fim = Math.max(...ic);
+  const pct = /%/.test(unidade||"") && min >= 0 && max <= 100;
+  const extremos = pct && vals.filter(v=>v<=20 || v>=80).length >= vals.length/2;
+  const lamTxt = melhor.lam.toFixed(2).replace(".",",");
+  if(ini <= 1 && fim >= 1){
+    return {chave:"", porque:"Box-Cox: λ = "+lamTxt+"; o intervalo de 95% inclui 1 — os dados não pedem transformação."};
+  }
+  if(extremos) return {chave:"arcsen", porque:"Porcentagem com muitos valores perto de 0 ou de 100: a transformação angular é a indicada (Box-Cox: λ = "+lamTxt+")."};
+  if(melhor.lam >= 0.25) return {chave: temZero ? "raiz05" : "raiz",
+    porque:"Box-Cox: λ = "+lamTxt+", mais perto de ½ — raiz quadrada"+(temZero?" (com +0,5, porque há zeros)":"")+"."};
+  return {chave: temZero ? "log10p1" : "log10",
+    porque:"Box-Cox: λ = "+lamTxt+(melhor.lam < -0.25 ? " (abaixo de 0; o log é a mais forte da lista)" : ", perto de 0")
+      +" — logaritmo"+(temZero?" (com +1, porque há zeros)":"")+"."};
+}
+
+/* ============ FATOR QUANTITATIVO: REGRESSÃO ============
+   Dose, taxa de aplicação, época em dias: níveis que são NÚMEROS. Aí a pergunta
+   não é "qual dose difere de qual", é "como a resposta muda com a dose" — e o
+   SISVAR responde com regressão. O número sai do próprio nome do nível:
+   "0,5 L/ha" → 0,5; "150 L/ha" → 150. */
+function valorNivel(nome){
+  const m = /-?\d+(?:[.,]\d+)?/.exec(String(nome||""));
+  return m ? Number(m[0].replace(",", ".")) : null;
+}
+function fatorQuantitativo(f){
+  const v = (f.niveis||[]).map(n=>valorNivel(n.nome));
+  return v.length >= 2 && v.every(x=>x!=null) && new Set(v).size === v.length;
+}
+function polinomio(b, x){ return b.reduce((a,bi,i)=>a+bi*Math.pow(x,i),0); }
+/* Mínimos quadrados de grau g, com x reescalado para não perder precisão com
+   doses grandes (150³ já passa de 3 milhões); os coeficientes voltam para x. */
+function ajustarPolinomio(xs, ys, g){
+  const s = Math.max(...xs.map(Math.abs)) || 1;
+  const u = xs.map(x=>x/s), m = g+1;
+  const A = Array.from({length:m}, (_,i)=>Array.from({length:m}, (_,j)=>u.reduce((a,v)=>a+Math.pow(v,i+j),0)));
+  const B = Array.from({length:m}, (_,i)=>u.reduce((a,v,k)=>a+Math.pow(v,i)*ys[k],0));
+  for(let c=0;c<m;c++){                                  // Gauss com pivô parcial
+    let p=c; for(let r=c+1;r<m;r++) if(Math.abs(A[r][c])>Math.abs(A[p][c])) p=r;
+    [A[c],A[p]]=[A[p],A[c]]; [B[c],B[p]]=[B[p],B[c]];
+    for(let r=0;r<m;r++){ if(r===c) continue; const f=A[r][c]/A[c][c]; for(let k=c;k<m;k++) A[r][k]-=f*A[c][k]; B[r]-=f*B[c]; }
+  }
+  return B.map((v,i)=>v/A[i][i]/Math.pow(s,i));
+}
+/* Regressão sobre as médias dos níveis (cada uma com r observações). Cada grau
+   entra em sequência — linear, quadrático, cúbico — com a SQ que acrescenta,
+   como no SISVAR; o que sobra da SQ do fator é o desvio da regressão. O modelo
+   indicado é o de maior grau significativo. Na quadrática, se o ponto de máximo
+   (ou mínimo) cai dentro das doses testadas, ele é dado: é a dose de máxima
+   eficiência técnica. */
+function regressaoPolinomial(xs, ys, r, qmErr, glErr, sqFator, alfa){
+  const k = xs.length;
+  if(k < 2 || xs.some(x=>x==null) || new Set(xs).size !== k) return null;
+  const gmax = Math.min(3, k-1);
+  const ybar = ys.reduce((a,b)=>a+b,0)/k;
+  const comps = []; let sqAcum = 0;
+  for(let g=1; g<=gmax; g++){
+    const b = ajustarPolinomio(xs, ys, g);
+    const sqReg = r*xs.reduce((a,x)=>{ const d=polinomio(b,x)-ybar; return a+d*d; },0);
+    const sq = Math.max(0, sqReg - sqAcum); sqAcum = sqReg;
+    const F = qmErr>0 ? sq/qmErr : null;
+    comps.push({grau:g, nome:["Linear","Quadrática","Cúbica"][g-1], gl:1, sq, qm:sq, f:F,
+                p:pValorF(F,1,glErr), coef:b, r2: sqFator>0 ? Math.min(1, sqReg/sqFator) : null});
+  }
+  const glDesv = (k-1) - gmax;
+  let desvio = null;
+  if(glDesv > 0){
+    const sq = Math.max(0, sqFator - sqAcum), qm = sq/glDesv, F = qmErr>0 ? qm/qmErr : null;
+    desvio = {gl:glDesv, sq, qm, f:F, p:pValorF(F, glDesv, glErr)};
+  }
+  let escolhido = null;
+  for(let g=gmax; g>=1; g--){ const c = comps[g-1]; if(c.p!=null && c.p < alfa){ escolhido = c; break; } }
+  let otimo = null;
+  if(escolhido && escolhido.grau === 2){
+    const b = escolhido.coef, x = -b[1]/(2*b[2]);
+    if(x >= Math.min(...xs) && x <= Math.max(...xs))
+      otimo = {x, y: polinomio(b, x), tipo: b[2] < 0 ? "máximo" : "mínimo"};
+  }
+  return {xs, ys, comps, desvio, escolhido, otimo};
+}
+function equacaoTexto(coef){
+  const f = v => fmt(Math.abs(v), Math.abs(v)>=100 ? 2 : Math.abs(v)>=1 ? 4 : 6);
+  return "ŷ = " + coef.map((b,i)=>{
+    const sinal = i===0 ? (b<0?"−":"") : (b<0?" − ":" + ");
+    return sinal + f(b) + (i===0 ? "" : i===1 ? "x" : "x" + (i===2?"²":"³"));
+  }).join("");
+}
+
+/* ============ DESDOBRAMENTO DA INTERAÇÃO ============
+   Como no SISVAR: cada fator é estudado DENTRO de cada nível (ou combinação de
+   níveis) dos outros — primeiro a ANOVA do desdobramento, depois as letras ou a
+   regressão. Com dois fatores sai a tabela de dupla entrada do relatório:
+   minúscula compara na coluna, maiúscula compara na linha.
+   `erroDe(i)` diz contra qual erro o fator i é testado: o resíduo, ou — na
+   parcela subdividida — o Erro(b) para o fator da subparcela e a variância
+   complexa (Satterthwaite) para o da parcela. */
+function desdobramento(fat, trats, somaT, somaO, nRep, erroDe, teste, alfa, tipos){
+  const tst = teste === "dunnett" ? "tukey" : teste;   // entre níveis de um fator não há testemunha
+  return fat.map((f, fi)=>{
+    const outros = fat.filter((_,j)=>j!==fi);
+    const grupos = {}, ordem = [];
+    trats.forEach((t,i)=>{
+      const k = outros.map(g=>t.niveis[g.id]).join("|");
+      if(!grupos[k]){
+        grupos[k] = {rot: outros.map(g=>(g.niveis.find(n=>n.id===t.niveis[g.id])||{}).nome||"?").join(" · "),
+                     ids: outros.map(g=>t.niveis[g.id]), cel:{}};
+        ordem.push(k);
+      }
+      grupos[k].cel[t.niveis[f.id]] = {soma: somaT[i], somaO: somaO ? somaO[i] : somaT[i]};
+    });
+    const err = erroDe(fi);
+    const quant = tipos && tipos[f.id] === "quant" && fatorQuantitativo(f);
+    const blocos = ordem.map(k=>{
+      const g = grupos[k];
+      const lst = f.niveis.map((nv,li)=>({i:li, id:nv.id, nome:nv.nome,
+        media: g.cel[nv.id].soma/nRep, mo: g.cel[nv.id].somaO/nRep}));
+      const tot = lst.reduce((a,x)=>a+x.media*nRep, 0);
+      const sq = lst.reduce((a,x)=>a+Math.pow(x.media*nRep,2), 0)/nRep - tot*tot/(nRep*lst.length);
+      const gl = lst.length-1, qm = sq/gl;
+      const F = err.qm>0 ? qm/err.qm : null;
+      const bloco = {chave:k, ids:g.ids, rot:g.rot, gl, sq, qm, f:F, p:pValorF(F, gl, err.gl), niveis:lst};
+      if(quant){
+        bloco.reg = regressaoPolinomial(f.niveis.map(nv=>valorNivel(nv.nome)), lst.map(x=>x.media), nRep, err.qm, err.gl, sq, alfa);
+      } else {
+        const ord = lst.slice().sort((a,b)=>b.media-a.media);
+        const r = letrasDoTeste(ord, tst, err.qm, err.gl, nRep, alfa);
+        ord.forEach((x,j)=>{ x.letra = r.letras[j]; });
+        bloco.dms = r.dms; bloco.teste = r.nome;
+      }
+      return bloco;
+    });
+    return {fi, fator:f.nome||"Fator", fid:f.id, dentroDe: outros.map(g=>g.nome||"Fator").join(" × "),
+            erro:err, blocos, quant};
+  });
+}
+
 /* A descrição diz o que cada teste FAZ com os resultados, não como ele se chama
    na literatura: quem escolhe aqui quer saber quantas letras vai ver e o quanto
    pode confiar nelas. "Conservador" e "rigoroso" são a mesma ideia — exigir uma
@@ -1048,9 +1291,18 @@ const TESTES = {
   duncan:  {nome:"Duncan",
             desc:"exige menos que o Tukey e separa mais tratamentos — encontra diferença "
                + "pequena, ao custo de mais risco de apontar diferença que não existe."},
+  snk:     {nome:"SNK",
+            desc:"Student-Newman-Keuls: fica entre o Tukey e o Duncan — exige menos para "
+               + "médias vizinhas e o mesmo que o Tukey para as dos extremos. Está no SISVAR."},
   t:       {nome:"t (DMS)",
             desc:"o menos exigente de todos: separa o máximo, e é o que mais aponta "
                + "diferença que não existe. Bom para explorar, arriscado para concluir."},
+  bonferroni: {nome:"t de Bonferroni",
+            desc:"o teste t com a significância dividida pelo número de comparações. "
+               + "Costuma exigir um pouco mais que o Tukey. Está no SISVAR."},
+  scheffe: {nome:"Scheffé",
+            desc:"o mais exigente de todos: só separa diferenças grandes. Serve para qualquer "
+               + "contraste, não só pares. Está no SASM-Agri."},
   dunnett: {nome:"Dunnett",
             desc:"compara cada tratamento só com a testemunha, e não os tratamentos "
                + "entre si. É o teste de quem quer saber “funcionou ou não?”."},
@@ -1080,17 +1332,26 @@ function alfaTexto(a){ return ALFAS[String(a)] || (a*100)+"%"; }
    contraste "testemunha vs. fatorial". O resíduo é o do ensaio inteiro — é o
    mesmo arranjo que SASM-Agri e SISVAR usam para fatorial com tratamento
    adicional. Soma: SQ Trat = SQ fatorial + SQ contraste (+ SQ entre adicionais). */
-function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa){
+function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa, opc){
+  opc = opc || {};
   if(!fat) return null;
   const adic = fat.adicionais || [];
-  if(!adic.length) return decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa);
+  const erroRes = ()=>({qm:qmRes, gl:glRes, nome:"Resíduo"});
+  if(!adic.length){
+    const d = decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa, opc);
+    d.desd = desdobramento(fat, trats, somaT, opc.somaO, nRep, erroRes, teste, alfa, opc.tipos);
+    return d;
+  }
 
   const idxF = trats.map((_,i)=>i).filter(i=>adic.indexOf(i) < 0);
   const tratsF = idxF.map(i=>trats[i]), somaF = idxF.map(i=>somaT[i]);
   const totF = somaF.reduce((a,s)=>a+s, 0);
   const CF  = totF*totF/(idxF.length*nRep);
   const sqF = somaF.reduce((a,s)=>a+s*s, 0)/nRep - CF;
-  const dec = decomporFatorial(fat, tratsF, somaF, nRep, CF, sqF, glRes, qmRes, teste, alfa);
+  const somaOF = opc.somaO ? idxF.map(i=>opc.somaO[i]) : null;
+  const dec = decomporFatorial(fat, tratsF, somaF, nRep, CF, sqF, glRes, qmRes, teste, alfa, Object.assign({}, opc, {somaO:somaOF}));
+  // o desdobramento também é só do fatorial: a testemunha não tem nível para entrar nele
+  dec.desd = desdobramento(fat, tratsF, somaF, somaOF, nRep, erroRes, teste, alfa, opc.tipos);
 
   const somaA = adic.map(i=>somaT[i]);
   const totA = somaA.reduce((a,s)=>a+s, 0);
@@ -1103,23 +1364,26 @@ function decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa)
   // o contraste vem antes: é a primeira pergunta — o fatorial fez diferença?
   dec.linhas.unshift(linha(adic.length > 1 ? "Adicionais vs. fatorial" : "Testemunha vs. fatorial", 1, sqContraste));
   if(adic.length > 1) dec.linhas.splice(1, 0, linha("Entre adicionais", adic.length-1, sqEntre));
-  dec.adicionais = adic.map(i=>({nome: trats[i].nome, num: trats[i].num, media: somaT[i]/nRep}));
+  dec.adicionais = adic.map(i=>({nome: trats[i].nome, num: trats[i].num, media: somaT[i]/nRep,
+                               mo: (opc.somaO ? opc.somaO[i] : somaT[i])/nRep}));
+  dec.mediaFatorialO = (somaOF ? somaOF.reduce((a,x)=>a+x,0) : totF)/(idxF.length*nRep);
   dec.mediaFatorial = totF/(idxF.length*nRep);
   return dec;
 }
-function decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa){
-  alfa = alfa||0.05;
+function decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa, opc){
+  alfa = alfa||0.05; opc = opc || {};
+  const somaO = opc.somaO || somaT;
   if(!fat) return null;
   const linhas = [], medias = [];
   let sqEfeitos = 0, glEfeitos = 0;
   const sqEfeito = {};              // SQ de cada efeito, pela chave dos índices: "0", "1", "0,1"…
   fat.forEach((f, fi)=>{
-    const soma = {}, n = {};
-    f.niveis.forEach(nv=>{ soma[nv.id]=0; n[nv.id]=0; });
+    const soma = {}, n = {}, sO = {};
+    f.niveis.forEach(nv=>{ soma[nv.id]=0; n[nv.id]=0; sO[nv.id]=0; });
     trats.forEach((t,i)=>{
       const nv = t.niveis[f.id];
       if(soma[nv]===undefined) return;
-      soma[nv] += somaT[i]; n[nv] += nRep;
+      soma[nv] += somaT[i]; n[nv] += nRep; sO[nv] += somaO[i];
     });
     const sq = f.niveis.reduce((a,nv)=> a + (n[nv.id] ? soma[nv.id]*soma[nv.id]/n[nv.id] : 0), 0) - C;
     const gl = f.niveis.length - 1;
@@ -1130,22 +1394,18 @@ function decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, test
 
     // médias de cada nível, comparadas pelo mesmo teste escolhido no ensaio
     const rep = n[f.niveis[0].id] || nRep;
-    const lst = f.niveis.map((nv,k)=>({i:k, nome:nv.nome, media: n[nv.id] ? soma[nv.id]/n[nv.id] : null}))
+    const lst = f.niveis.map((nv,k)=>({i:k, nome:nv.nome, media: n[nv.id] ? soma[nv.id]/n[nv.id] : null,
+                                       mo: n[nv.id] ? sO[nv.id]/n[nv.id] : null}))
                         .filter(x=>x.media!=null).sort((a,b)=>b.media-a.media);
-    let dms = null;
-    if(teste === "fisher")      dms = qmRes>=0 ? tCrit(alfa,glRes)*Math.sqrt(2*qmRes/rep) : null;
-    else if(teste !== "sk"){
-      const q = qCrit(alfa, f.niveis.length, Math.round(glRes));
-      dms = (q!=null && qmRes>=0) ? q*Math.sqrt(qmRes/rep) : null;
+    const r = letrasDoTeste(lst, teste, qmRes, glRes, rep, alfa);
+    lst.forEach((x,k)=>{ x.letra = r.letras[k]; });
+    const entrada = {fator:f.nome||"Fator", fid:f.id, dms:r.dms, teste:r.nome, linhas:lst};
+    // fator quantitativo: a regressão sobre as médias dos níveis responde melhor que letras
+    if(opc.tipos && opc.tipos[f.id] === "quant" && fatorQuantitativo(f)){
+      const noOrdem = f.niveis.map(nv=>lst.find(x=>x.nome===nv.nome)).filter(Boolean);
+      entrada.reg = regressaoPolinomial(noOrdem.map(x=>valorNivel(x.nome)), noOrdem.map(x=>x.media), rep, qmRes, glRes, sq, alfa);
     }
-    if(teste === "sk"){
-      const L = scottKnott(lst, qmRes, rep, glRes, alfa);
-      lst.forEach(x=>{ x.letra = L[x.i] || "a"; });
-    } else if(dms!=null){
-      const ls = letrasPorDMS(lst, dms);
-      lst.forEach((x,k)=>{ x.letra = ls[k]; });
-    }
-    medias.push({fator:f.nome||"Fator", dms, linhas:lst});
+    medias.push(entrada);
   });
 
   /* Interações: TODAS as combinações de dois ou mais fatores. A SQ de cada uma
@@ -1189,8 +1449,11 @@ function decomporFatorial(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, test
   return {linhas, medias, glInt, pInt: qmRes>0 ? pInt : null};
 }
 
-function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
+/* `opc`: {tipos: {idDoFator: "quant"|"qual"}, somaO: somas ORIGINAIS por tratamento
+   quando os dados vêm transformados — para as médias mostradas}. */
+function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl, opc){
   alfa = (alfa===0.01||alfa===0.05||alfa===0.10) ? alfa : 0.05;
+  opc = opc || {};
   const obs=[], somaT=new Array(nTrat).fill(0), nT=new Array(nTrat).fill(0);
   const somaB=new Array(nRep).fill(0), nB=new Array(nRep).fill(0);
   let soma=0, somaQ=0, N=0;
@@ -1214,7 +1477,7 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
   /* Quadrado latino: além das linhas (os blocos), uma segunda restrição de
      casualização — as colunas — sai do resíduo. A coluna de cada parcela vem
      do croqui; sem ele o delineamento não pode ser analisado. */
-  let sqColuna = 0, glColuna = 0;
+  let sqColuna = 0, glColuna = 0, somaCol = null;
   if(delin==="DQL"){
     if(nTrat !== nRep) return {erro:"dql_desbalanceado", nTrat, nRep};
     if(!col) return {erro:"dql_sem_croqui"};
@@ -1243,6 +1506,7 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
     }
     if(nC.some(x=>x!==nTrat)) return {erro:"dql_croqui_invalido"};
     sqColuna = somaC.reduce((a,s)=>a+s*s,0)/nTrat - C;
+    somaCol = somaC;
     glColuna = nTrat-1;
   }
 
@@ -1265,27 +1529,18 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
   const medias = somaT.map((s,i)=>({i, media:s/nRep}));
   const teste = TESTES[tst] ? tst : "tukey";
   const glR = Math.round(glRes);
-  const erroPad = qmRes>=0 ? Math.sqrt(qmRes/nRep) : null;   // erro padrão da média
-  const q = qCrit(alfa, nTrat, glR);
-  let dms = null, critNome = "", critValor = null;
-  if(teste === "tukey"){
-    dms = (q!=null && erroPad!=null) ? q*erroPad : null;
-    critNome = "q("+nTrat+", "+glR+")"; critValor = q;
-  } else if(teste === "t"){
-    const t = tCrit(alfa, glRes);
-    dms = qmRes>=0 ? t*Math.sqrt(2*qmRes/nRep) : null;
-    critNome = "t("+glR+")"; critValor = t;
-  } else if(teste === "duncan"){
-    dms = erroPad!=null ? rDuncan(alfa, 2, glR)*erroPad : null;   // p=2 separa vizinhos
-    critNome = "r(2…"+nTrat+", "+glR+")"; critValor = rDuncan(alfa, nTrat, glR);
-  } else if(teste === "dunnett"){
+  const ord = medias.slice().sort((a,b)=>b.media-a.media);
+  const letras = new Array(nTrat).fill("");
+  let dms = null, critNome = "", critValor = null, testeNome = TESTES[teste].nome;
+  if(teste === "dunnett"){
     const d = dDunnett(alfa, Math.max(1,nTrat-1), glRes, true);
     dms = qmRes>=0 ? d*Math.sqrt(2*qmRes/nRep) : null;
     critNome = "d("+(nTrat-1)+", "+glR+")"; critValor = d;
+  } else {
+    const r = letrasDoTeste(ord, teste, qmRes, glRes, nRep, alfa);
+    dms = r.dms; critNome = r.critNome; critValor = r.critValor; testeNome = r.nome;
+    ord.forEach((o,k)=>{ letras[o.i] = r.letras[k]; });
   }
-
-  const ord = medias.slice().sort((a,b)=>b.media-a.media);
-  const letras = new Array(nTrat).fill("");
   let dunnett = null;
   if(teste === "dunnett"){
     /* Dunnett não agrupa: compara cada tratamento com a testemunha. O índice do
@@ -1300,16 +1555,33 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
       letras[m.i] = m.i===iCtrl ? "—"
         : (dms!=null && Math.abs(m.media-mCtrl)>dms ? "*" : "ns");
     });
-  } else if(teste === "sk"){
-    const L = scottKnott(medias, qmRes, nRep, glRes, alfa);
-    medias.forEach(m=>{ letras[m.i] = L[m.i] || "a"; });
-  } else if(teste === "duncan" && erroPad != null){
-    const ls = letrasPorAmplitude(ord, p => rDuncan(alfa, p, glR)*erroPad);
-    ord.forEach((o,k)=>{ letras[o.i] = ls[k]; });
-  } else if(dms != null){
-    const ls = letrasPorDMS(ord, dms);
-    ord.forEach((o,k)=>{ letras[o.i] = ls[k]; });
   }
+  /* Resíduos do modelo do delineamento, para os pressupostos. Na subdividida o
+     modelo tem o efeito bloco × fator da parcela (o Erro a), que sai também. */
+  const g0 = soma/N, res = [], resT = somaT.map(()=>[]);
+  let mBA = null;
+  if(delin === "SPLIT" && fat && fat.length === 2){
+    mBA = {}; const cBA = {}, mA = {}, cA = {};
+    for(let t=0;t<nTrat;t++) for(let b=0;b<nRep;b++){
+      const k = b+"|"+trats[t].niveis[fat[0].id], a = trats[t].niveis[fat[0].id];
+      mBA[k] = (mBA[k]||0) + dados[t][b]; cBA[k] = (cBA[k]||0) + 1;
+      mA[a] = (mA[a]||0) + dados[t][b]; cA[a] = (cA[a]||0) + 1;
+    }
+    Object.keys(mBA).forEach(k=>{ mBA[k] /= cBA[k]; }); Object.keys(mA).forEach(k=>{ mA[k] /= cA[k]; });
+    mBA.__A = mA;
+  }
+  for(let t=0;t<nTrat;t++) for(let b=0;b<nRep;b++){
+    let ajuste = somaT[t]/nRep;
+    if(mBA){ const a = trats[t].niveis[fat[0].id]; ajuste += mBA[b+"|"+a] - mBA.__A[a]; }
+    else if(comBloco) ajuste += somaB[b]/nTrat - g0;
+    if(delin === "DQL" && somaCol) ajuste += somaCol[col[t][b]]/nTrat - g0;
+    const e = dados[t][b] - ajuste; res.push(e); resT[t].push(e);
+  }
+  const pressupostos = {
+    normal: shapiroWilk(res),
+    homog: bartlett(resT.map(x=>({n:x.length, s2: x.reduce((a,v)=>a+v*v,0)/Math.max(1, x.length-1)})))
+  };
+
   /* Parcelas subdivididas: o fator da parcela é testado contra o Erro(a)
      — a variação entre parcelas dentro de bloco — e não contra o resíduo
      geral. Testar tudo contra o mesmo denominador infla a significância
@@ -1338,12 +1610,11 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
              sqErroB, glErroB, qmErroB, sqBA};
   }
 
-  const dec = decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa);
+  const dec = decompor(fat, trats, somaT, nRep, C, sqTrat, glRes, qmRes, teste, alfa, opc);
 
   if(split){
     const F = (qm,gl,qme,gle) => qme>0 ? {f:qm/qme, p:pValorF(qm/qme, gl, gle)} : {f:null,p:null};
     const qmA = split.sqA/split.glA;
-    const sqAB = sqTrat - split.sqA - (dec ? dec.linhas.find(l=>!l.interacao && l.nome!==(split.fA.nome||"Fator"))?.sq ?? 0 : 0);
     const sqB = dec ? (dec.linhas.find(l=>l.nome===(split.fB.nome||"Fator"))||{}).sq : null;
     const sqInt = sqTrat - split.sqA - (sqB||0);
     const glB = split.b-1, glInt = (split.a-1)*(split.b-1);
@@ -1356,38 +1627,46 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
                              nRep*split.b, teste, alfa);
     const mB = mediasDoFator(split.fB, trats, somaT, nRep, split.qmErroB, split.glErroB,
                              nRep*split.a, teste, alfa);
-    // letras dos tratamentos: Erro(b), com os GL do Erro(b)
-    const epS = split.qmErroB>=0 ? Math.sqrt(split.qmErroB/nRep) : null;
-    let dmsS = null;
-    if(teste==="fisher")      dmsS = tCrit(alfa,split.glErroB)*Math.sqrt(2*split.qmErroB/nRep);
-    else if(teste==="duncan") dmsS = epS!=null ? rDuncan(alfa, 2, Math.round(split.glErroB))*epS : null;
-    else if(teste!=="sk"){
-      const qs = qCrit(alfa, nTrat, Math.round(split.glErroB));
-      dmsS = (qs!=null && epS!=null) ? qs*epS : null;
-    }
+    // médias originais (dados transformados) e regressão do fator quantitativo, como no fatorial comum
+    const somaO = opc.somaO || somaT;
+    [[mA, split.fA, split.qmErroA, split.glErroA, nRep*split.b, split.sqA],
+     [mB, split.fB, split.qmErroB, split.glErroB, nRep*split.a, sqB]].forEach(([m, f, qe, ge, rr, sqf])=>{
+      m.fid = f.id;
+      m.linhas.forEach(x=>{
+        const nv = f.niveis.find(n=>n.nome===x.nome);
+        let so = 0; trats.forEach((t,i)=>{ if(nv && t.niveis[f.id]===nv.id) so += somaO[i]; });
+        x.mo = so/rr;
+      });
+      if(opc.tipos && opc.tipos[f.id]==="quant" && fatorQuantitativo(f)){
+        const noOrdem = f.niveis.map(nv=>m.linhas.find(x=>x.nome===nv.nome)).filter(Boolean);
+        m.reg = regressaoPolinomial(noOrdem.map(x=>valorNivel(x.nome)), noOrdem.map(x=>x.media), rr, qe, ge, sqf, alfa);
+      }
+    });
+    /* Desdobramento na subdividida (SISVAR, "variância complexa"): o fator da
+       SUBPARCELA dentro de cada nível da parcela usa o Erro(b); o da PARCELA
+       dentro de cada nível da subparcela usa [QMa + (b−1)·QMb]/b, com os graus de
+       liberdade de Satterthwaite. */
+    const vc = (split.qmErroA + (split.b-1)*split.qmErroB)/split.b;
+    const glVc = Math.pow(split.qmErroA + (split.b-1)*split.qmErroB, 2)
+      / (Math.pow(split.qmErroA,2)/split.glErroA + Math.pow((split.b-1)*split.qmErroB,2)/split.glErroB);
+    const erroSplit = i => i===0 ? {qm:vc, gl:glVc, nome:"Variância complexa (Satterthwaite)"}
+                                 : {qm:split.qmErroB, gl:split.glErroB, nome:"Erro (b)"};
+    const desdS = desdobramento(fat, trats, somaT, opc.somaO, nRep, erroSplit, teste, alfa, opc.tipos);
+    // letras dos tratamentos: Erro(b), com os GL do Erro(b) — mesma regra de sempre
+    /* Dunnett aqui compararia com a testemunha contra o Erro(b); o app não o
+       implementa na subdividida, e a regra comum (Tukey) assume, com o nome dela. */
+    const rS = letrasDoTeste(ord, teste, split.qmErroB, split.glErroB, nRep, alfa);
     const letrasS = new Array(nTrat).fill("");
-    if(teste==="sk"){
-      const L = scottKnott(medias, split.qmErroB, nRep, split.glErroB, alfa);
-      medias.forEach(m=>{ letrasS[m.i] = L[m.i] || "a"; });
-    } else if(teste==="duncan" && epS!=null){
-      const ls = letrasPorAmplitude(ord, p => rDuncan(alfa, p, Math.round(split.glErroB))*epS);
-      ord.forEach((o,k)=>{ letrasS[o.i] = ls[k]; });
-    } else if(dmsS!=null){
-      const ls = letrasPorDMS(ord, dmsS);
-      ord.forEach((o,k)=>{ letrasS[o.i] = ls[k]; });
-    }
-    const critS = teste==="tukey"  ? {n:"q("+nTrat+", "+split.glErroB+")", v:qCrit(alfa, nTrat, Math.round(split.glErroB))}
-                : teste==="fisher" ? {n:"t("+split.glErroB+")", v:tCrit(alfa,split.glErroB)}
-                : teste==="duncan" ? {n:"r(2…"+nTrat+", "+split.glErroB+")",
-                                      v:rDuncan(alfa, nTrat, Math.round(split.glErroB))}
-                : {n:"", v:null};
+    ord.forEach((o,k)=>{ letrasS[o.i] = rS.letras[k]; });
+    const dmsS = rS.dms, critS = {n:rS.critNome, v:rS.critValor};
     return {
-      ok:true, delin, N, media, glRes:split.glErroB, teste,
+      ok:true, delin, N, media, glRes:split.glErroB, teste, alfa,
       critNome:critS.n, critValor:critS.v,
       cv: media!==0 ? 100*Math.sqrt(split.qmErroB)/Math.abs(media) : null,
       cvA: media!==0 ? 100*Math.sqrt(split.qmErroA)/Math.abs(media) : null,
-      dms: dmsS, q,
-      fatorial: {linhas:[], medias:[mA,mB], glInt, pInt:rI.p},
+      dms: dmsS, testeNome: rS.nome,
+      fatorial: {linhas:[], medias:[mA,mB], glInt, pInt:rI.p, desd:desdS},
+      pressupostos,
       split:true,
       fonte:[
         {nome:"Blocos", gl:glBloco, sq:sqBloco, qm:qmBloco},
@@ -1407,7 +1686,7 @@ function anova(dados, nTrat, nRep, delin, fat, trats, tst, col, alfa, ctrl){
   }
 
   return {
-    ok:true, delin, N, media, cv, dms, q, glRes, fatorial: dec, teste, critNome, critValor, alfa, dunnett,
+    ok:true, delin, N, media, cv, dms, glRes, fatorial: dec, teste, testeNome, critNome, critValor, alfa, dunnett, pressupostos,
     fonte:[
       comBloco ? {nome: delin==="DQL"?"Linhas":"Blocos", gl:glBloco, sq:sqBloco, qm:qmBloco,
                   f:fBloco, p:pValorF(fBloco,glBloco,glRes)} : null,
@@ -1437,7 +1716,7 @@ function classeCV(cv){
    ser 11 MB para ser o espaço livre do celular (centenas de MB, na prática). */
 /* Versão do programa, à vista na tela de sincronização. Serve para saber se os
    três aparelhos estão na mesma — sem isso, "atualizei?" vira adivinhação. */
-const VERSAO_APP = "2026-09-29 · 19";
+const VERSAO_APP = "2026-09-30 · 20";
 
 /* Duas gavetas no aparelho: `estado` guarda o caderno (texto, leve) e `fotos`
    guarda as imagens, uma por chave. Até a versão 12 as imagens moravam DENTRO
@@ -1707,20 +1986,36 @@ function marcarGerais(){
   ST.atualizadoGerais = new Date().toISOString();
   marcarSujo();
 }
-function marcarSujo(){
+/* `alvos`: ensaios mudados FORA da tela deles — etiqueta ou grupo trocados no
+   cartão da tela inicial, PDF movido para outro ensaio. Sem carimbo, a mudança
+   ficava só neste aparelho: a sincronização decide pelo carimbo, e até a v19
+   só o ensaio aberto era carimbado. */
+function marcarSujo(...alvos){
   PERSIST.pend = true; PERSIST.erro = null;
+  PERSIST.geracao = (PERSIST.geracao||0) + 1;
+  SYNC.sujo = true;
+  const agora = new Date().toISOString();
   const e = exp();
-  if(e) e.atualizado = new Date().toISOString();   // carimbo por ensaio: é a chave da mesclagem
+  if(e) e.atualizado = agora;                      // carimbo por ensaio: é a chave da mesclagem
+  alvos.forEach(x=>{ if(x) x.atualizado = agora; });
   atualizarStatus();
   clearTimeout(TIMER); TIMER = setTimeout(salvar, 600);
 }
 async function salvar(){
   clearTimeout(TIMER);
-  if(PERSIST.salvando || !PERSIST.pend) return;
+  if(!PERSIST.pend) return;
+  /* Já gravando: não descarta o pedido — agenda de novo. Antes voltava sem
+     fazer nada, e o que se digitou durante a gravação ficava só na memória. */
+  if(PERSIST.salvando){ TIMER = setTimeout(salvar, 300); return; }
   PERSIST.salvando = true; atualizarStatus();
+  const geracao = PERSIST.geracao;
   try{
     await gravarLocal(ST);
-    PERSIST.pend = false; PERSIST.erro = null; PERSIST.ultimo = new Date();
+    /* Só está "tudo gravado" se nada mudou DURANTE a gravação. O IndexedDB tira
+       a cópia no começo; uma tecla no meio fica fora dela e precisa de outra. */
+    if(PERSIST.geracao === geracao) PERSIST.pend = false;
+    else { clearTimeout(TIMER); TIMER = setTimeout(salvar, 300); }
+    PERSIST.erro = null; PERSIST.ultimo = new Date();
   }catch(err){
     PERSIST.erro = (err && err.name === "QuotaExceededError")
       ? "Sem espaço no aparelho. Libere as versões ampliadas das fotos."
@@ -1757,13 +2052,31 @@ function syncConfig(){
 }
 function syncPronto(){ const c = syncConfig(); return !!(c && c.token); }
 
+/* Toda conversa com o servidor tem prazo. Sem ele, com sinal fraco na lavoura
+   um pedido podia ficar pendurado por minutos — e enquanto isso nenhuma outra
+   sincronização começava, porque a anterior "ainda estava rodando". O prazo
+   cresce com o tamanho do que se envia: um PDF grande em 3G leva tempo mesmo. */
+async function buscarComPrazo(url, opc, ms){
+  const ctl = new AbortController();
+  const t = setTimeout(()=>ctl.abort(), ms);
+  try{ return await fetch(url, Object.assign({}, opc, {signal: ctl.signal})); }
+  catch(err){
+    if(err && err.name === "AbortError") throw new Error("o servidor não respondeu a tempo — sinal fraco?");
+    throw err;
+  }
+  finally{ clearTimeout(t); }
+}
+function prazoPara(corpo){
+  const n = corpo ? (corpo.size || corpo.length || 0) : 0;
+  return 45000 + Math.round(n / 50);          // 45 s + 1 s a cada 50 KB
+}
 async function supa(caminho, opc){
   const c = syncConfig();
   if(!c) throw new Error("sem configuração");
   const cab = {apikey:c.chave, "Content-Type":"application/json"};
   if(c.token) cab.Authorization = "Bearer "+c.token;
-  const r = await fetch(c.url.replace(/\/+$/,"")+caminho,
-    Object.assign({}, opc, {headers: Object.assign(cab, (opc||{}).headers||{})}));
+  const r = await buscarComPrazo(c.url.replace(/\/+$/,"")+caminho,
+    Object.assign({}, opc, {headers: Object.assign(cab, (opc||{}).headers||{})}), prazoPara((opc||{}).body));
   if(!r.ok){
     /* 401 costuma ser só o token vencido — o relógio do aparelho atrasado já
        basta para a checagem preventiva errar. Renova uma vez e repete, em vez
@@ -1818,7 +2131,8 @@ async function supaArquivo(caminho, opc, _retentado){
   const o = Object.assign({}, opc);
   o.headers = Object.assign({apikey:c.chave, Authorization:"Bearer "+c.token},
                             (opc||{}).headers || {});
-  const r = await fetch(c.url + caminho, o);
+  // download não diz o tamanho antes: prazo folgado, só para não pendurar
+  const r = await buscarComPrazo(c.url + caminho, o, o.body ? prazoPara(o.body) : 180000);
   if(r.status === 401 && !_retentado && await syncRenovar())
     return supaArquivo(caminho, opc, true);
   return r;
@@ -2064,6 +2378,7 @@ async function sincronizar(silencioso){
   if(!syncPronto()){ if(!silencioso) toast("Configure a sincronização primeiro"); return; }
   if(!navigator.onLine){ if(!silencioso) toast("Sem internet agora"); return; }
   SYNC.rodando = true; SYNC.erro = null; atualizarStatus();
+  const geracaoInicio = PERSIST.geracao || 0;
   try{
     const c = syncConfig();
     if(c.expira && Date.now() > c.expira - 60000) await syncRenovar();
@@ -2076,6 +2391,19 @@ async function sincronizar(silencioso){
        2ª etapa: o documento inteiro apenas dos que estão mais novos lá fora.
        A regra de decisão é a MESMA de antes — compara os mesmos carimbos —,
        só se deixou de baixar o que seria descartado. */
+    /* 0. Exclusões feitas sem sinal. Antes, o aviso de exclusão era mandado
+       uma vez só, na hora — e só se houvesse sinal. Excluído no campo, o
+       ensaio voltava inteiro na sincronização seguinte, porque o servidor
+       ainda o tinha. Agora a exclusão espera numa fila, como as fotos. */
+    const lapides = Array.isArray(ST.lapides) ? ST.lapides.slice() : [];
+    if(lapides.length){
+      await supa("/rest/v1/experimentos", {
+        method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
+        body: JSON.stringify(lapides.map(l=>({id:l.id, dados:{}, removido:true, atualizado:l.quando})))
+      });
+      ST.lapides = (ST.lapides||[]).filter(l=>!lapides.some(x=>x.id===l.id));
+    }
+
     const fichas = await supa("/rest/v1/experimentos?select=id,atualizado,removido");
     const localPorId = {};
     ST.experimentos.forEach(e=>{ localPorId[e.id] = e.atualizado || ""; });
@@ -2226,6 +2554,8 @@ async function sincronizar(silencioso){
 
     migrar();
     SYNC.quando = new Date(); SYNC.erro = null;
+    // "a enviar" some só se nada mudou enquanto sincronizava
+    if((PERSIST.geracao || 0) === geracaoInicio) SYNC.sujo = false;
     PERSIST.pendSync = false;
     await gravarLocal(ST);
     PERSIST.pendSync = undefined;
@@ -2289,7 +2619,7 @@ function modalEtiquetas(e){
     if(t){
       const i = (e.etiquetas||[]).indexOf(t.dataset.t);
       if(i >= 0) e.etiquetas.splice(i,1); else e.etiquetas.push(t.dataset.t);
-      marcarSujo(); desenhar(); render();
+      marcarSujo(e); desenhar(); render();       // `e`: aberto pela tela inicial, não é o exp()
       return;
     }
     if(ev.target.closest('[data-acao="editar-etqs"]')){ d.remove(); modalEditarEtiquetas(); return; }
@@ -2339,13 +2669,12 @@ function modalEditarEtiquetas(){
     if(del){
       const t = ST.etiquetas.find(x=>x.id===del.dataset.del);
       const usos = ST.experimentos.filter(e=>(e.etiquetas||[]).indexOf(del.dataset.del)>=0).length;
-      if(!await confirmar("Apagar “"+(t?t.nome:"")+"”?"
+      if(!await confirmar("Apagar “"+esc(t?t.nome:"")+"”?"
           + (usos ? " Ela sai de "+usos+" ensaio(s)." : ""))) return;
       ST.etiquetas = ST.etiquetas.filter(x=>x.id!==del.dataset.del);
-      ST.experimentos.forEach(e=>{
-        e.etiquetas = (e.etiquetas||[]).filter(id=>id!==del.dataset.del);
-      });
-      marcarGerais(); marcarSujo(); desenhar(); render(); return;
+      const afetados = ST.experimentos.filter(e=>(e.etiquetas||[]).indexOf(del.dataset.del)>=0);
+      afetados.forEach(e=>{ e.etiquetas = e.etiquetas.filter(id=>id!==del.dataset.del); });
+      marcarGerais(); marcarSujo(...afetados); desenhar(); render(); return;
     }
     if(ev.target.closest("[data-f]") || ev.target === d) d.remove();
   });
@@ -2690,6 +3019,10 @@ async function restaurarBackup(arquivo){
     }
   }
 
+  // ensaio que volta do backup deixa de estar na fila de exclusão
+  if(Array.isArray(ST.lapides))
+    ST.lapides = ST.lapides.filter(l=>!dados.experimentos.some(x=>x.id===l.id));
+
   // PDFs do relatório: voltam por nome, como as fotos
   const pdfsComArquivo = new Set();
   for(const e of dados.experimentos){
@@ -2957,7 +3290,22 @@ function statusHtml(){
   if(SYNC.rodando)     return '<span class="ponto pend"></span>sincronizando';
   if(SYNC.erro)        return '<span class="ponto err"></span>falha ao sincronizar';
   if(!syncPronto())    return '<span class="ponto pend"></span>entre na equipe';
+  /* "Sincronizado" só quando é verdade. O envio espera 30 s depois de cada
+     mudança, e até a v19 a barra já dizia "sincronizado" nesse intervalo —
+     justo o que se confere antes de trocar de aparelho ou reinstalar. */
+  const fila = pendentesDeEnvio();
+  if(fila.arquivos) return '<span class="ponto pend"></span>'+fila.arquivos+' arquivo'+(fila.arquivos===1?'':'s')+' a enviar';
+  if(SYNC.sujo || !SYNC.quando) return '<span class="ponto pend"></span>a enviar';
   return '<span class="ponto ok"></span>sincronizado';
+}
+/* O que este aparelho ainda deve ao servidor: fotos e PDFs não enviados. */
+function pendentesDeEnvio(){
+  let arquivos = 0;
+  (ST.experimentos||[]).forEach(e=>{
+    (e.fotos||[]).forEach(f=>{ if(fotoPendente(f)) arquivos++; });
+    (e.relatorios||[]).forEach(r=>{ if(pdfPendente(r)) arquivos++; });
+  });
+  return {arquivos};
 }
 function atualizarStatus(){
   const el = app.querySelector(".salvo");
@@ -2971,7 +3319,7 @@ function atualizarStatus(){
 function telaSync(){
   const c = ST.sync || {};
   const ligado = syncPronto();
-  let s = barraTopo({t:"Sincronização", s:"Como o caderno chega aos outros dois"}, true)
+  let s = barraTopo({t:"Sincronização", s:"Como o caderno chega aos outros aparelhos"}, true)
     + '<div class="wrap">';
 
   s += '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Estado</div>'
@@ -3077,7 +3425,7 @@ function telaSync(){
       + 'de onde dá para mandar ao OneDrive.</p>'
       + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
       + '<b>Backup dos dados</b> é leve e instantâneo — faça toda semana. '
-      + '<b>Completo</b> leva as imagens e fica grande: guarde no fim de cada safra, '
+      + '<b>Completo</b> leva as imagens e os PDFs dos relatórios, e fica grande: guarde no fim de cada safra, '
       + 'ou antes de uma mudança grande.</p>'
       + '<div class="aviso aviso-w" style="margin-top:12px"><span>&#9888;</span><div>'
       + 'Sincronizar <b>não</b> é backup. O servidor recebe uma cópia fiel do que estiver '
@@ -3089,7 +3437,7 @@ function telaSync(){
     + '<h2>'+esc(VERSAO_APP)+'</h2></div>'
     + '<button class="b b-s" data-acao="buscar-atualizacao">Buscar atualização</button></div>'
     + '<p style="font-size:.83rem;color:var(--muted);max-width:66ch">'
-    + 'Confira se os três aparelhos mostram a mesma versão. O app se atualiza sozinho '
+    + 'Confira se todos os aparelhos mostram a mesma versão. O app se atualiza sozinho '
     + 'ao abrir com internet; este botão força a busca agora. '
     + '<b>Seus dados não são afetados</b> — eles ficam no aparelho, não no programa.</p></div>';
 
@@ -3124,7 +3472,7 @@ function telaHome(){
   if(!syncConfig()){
     s += '<div class="aviso aviso-w" style="margin-bottom:18px"><span>&#9888;</span><div>'
       + '<b>Sincronização desligada.</b> O caderno está gravado só neste aparelho. '
-      + 'Configure a equipe para que os ensaios cheguem aos outros dois.'
+      + 'Configure a equipe para que os ensaios cheguem aos outros aparelhos.'
       + '<button class="b b-s" data-acao="tela-sync" style="margin-top:8px">Configurar</button>'
       + '</div></div>';
   } else if(SYNC.erro){
@@ -3202,7 +3550,7 @@ function telaHome(){
              + 'border-color:transparent;background:none" aria-label="Apagar grupo">&times;</button>')
         + '</span>';
     });
-    const semGrupo = ST.experimentos.filter(e=>!e.grupoId).length;
+    const semGrupo = ST.experimentos.filter(e=>!e.grupoId || !ST.grupos.some(g=>g.id===e.grupoId)).length;
     if(semGrupo){
       s += '<button class="b b-s'+(grupoAberto==="__sem"?' b-p':'')+'" data-acao="ver-grupo" data-id="__sem">'
         + 'Sem grupo <span style="opacity:.7">'+semGrupo+'</span></button>';
@@ -3233,7 +3581,7 @@ function telaHome(){
   }
 
   const listaFinal = grupoAberto==="__sem" && !busca
-    ? ST.experimentos.filter(e=>!e.grupoId) : lista;
+    ? ST.experimentos.filter(e=>!e.grupoId || !ST.grupos.some(g=>g.id===e.grupoId)) : lista;
 
   if(ST.experimentos.length===0){
     s += '<div class="card vazio"><h2>Nenhum ensaio cadastrado</h2>'
@@ -3292,12 +3640,8 @@ function telaHome(){
     + '<p style="font-size:.8rem;color:var(--muted);max-width:64ch">'
     + (totFotos ? '<b>'+totFotos+' foto'+(totFotos===1?'':'s')+'</b> guardada'+(totFotos===1?'':'s')+'. ' : '')
     + (cabem.total===0
-        ? '<b>Espaço esgotado.</b> Libere as versões ampliadas abaixo, ou crie outro experimento — cada um tem o seu próprio espaço.'
-        : 'Ainda cabem cerca de <b>'+cabem.total+'</b> fotos'
-          + (cabem.ampliadas
-              ? ': '+cabem.ampliadas+' com versão ampliada e mais '+cabem.miniaturas+' em miniatura depois disso.'
-              : ', em miniatura — resolução suficiente para identificar a parcela e o sintoma. '
-                + 'Para manter o original em resolução cheia, use o campo de link na foto.'))
+        ? '<b>Espaço do aparelho esgotado.</b> Libere as versões ampliadas abaixo, ou apague arquivos do celular.'
+        : 'Ainda cabem cerca de <b>'+cabem.total.toLocaleString("pt-BR")+'</b> fotos neste aparelho.')
     + '</p>'
     + (lib > 512*1024
         ? '<div class="linha" style="margin-top:12px"><button class="b b-s" data-acao="liberar">'
@@ -3858,22 +4202,24 @@ function secaoAplicacoes(e){
   s += '<div class="grid" style="gap:8px">';
   e.aplicacoes.forEach(a=>{
     const ch = "aplic."+a.id;
+    /* Quebra em duas linhas no celular (letra e estádio em cima, data e × embaixo):
+       numa linha só pedia ~390 px e empurrava a página para o lado. */
     s += '<div class="card card-p" style="padding:12px">'
-      + '<div class="linha" style="gap:10px;flex-wrap:nowrap;align-items:center">'
+      + '<div class="linha" style="gap:10px;flex-wrap:wrap;align-items:center">'
       + (so ? '<span class="pill pill-a" style="font-size:.9rem;padding:6px 12px">'+esc(a.rotulo)+'</span>'
             : '<input data-k="'+ch+'.rotulo" data-campo="'+ch+'.rotulo" value="'+esc(a.rotulo)+'" '
               + 'maxlength="3" aria-label="Letra da aplicação" style="flex:none;width:52px;'
               + 'border:1px solid var(--accent-line);background:var(--accent-soft);color:var(--accent);'
               + 'border-radius:var(--r-sm);padding:9px 4px;min-height:42px;font-size:1rem;'
               + 'font-weight:700;text-align:center">')
-      + '<div style="flex:1;min-width:120px">'
+      + '<div style="flex:1 1 150px;min-width:0">'
       + (so ? '<div style="font-size:.95rem">'+(esc(a.estadio)||'—')+'</div>'
             : '<input data-k="'+ch+'.estadio" data-campo="'+ch+'.estadio" value="'+esc(a.estadio)+'" '
               + 'placeholder="Estádio — ex.: V4" style="border:1px solid var(--line-2);'
               + 'background:var(--surface);border-radius:var(--r-sm);padding:9px 11px;width:100%;'
               + 'min-height:42px;font-size:.95rem">')
       + '</div>'
-      + '<div style="flex:none;width:150px">'
+      + '<div style="flex:1 0 140px;max-width:170px">'
       + (so ? '<div style="font-size:.85rem;color:var(--muted)">'+(a.data?dataBr(a.data):'—')+'</div>'
             : '<input type="date" data-k="'+ch+'.data" data-campo="'+ch+'.data" value="'+esc(a.data)+'" '
               + 'style="border:1px solid var(--line-2);background:var(--surface);'
@@ -4112,9 +4458,13 @@ function abaTratamentos(e){
         + '<select data-acao="set-unidade" data-id="'+t.id+'" data-prod="'+p.id+'" '
         + 'style="border:1px solid var(--line-2);background:var(--surface);border-radius:5px;'
         + 'padding:8px 4px;min-height:38px;font-size:.82rem;width:100%">'
-        + ["","L/ha","mL/ha","kg/ha","g/ha","% v/v","L/100L","mL/100L","g/100L",
-           "kg/100kg","mL/kg semente","g/kg semente","dose/ha"]
-            .map(u=>'<option value="'+esc(u)+'"'+((p.unidade||"")===u?" selected":"")+'>'+(u||"unid.")+'</option>').join("")
+        + (()=>{
+            const us = ["","L/ha","mL/ha","kg/ha","g/ha","% v/v","L/100L","mL/100L","g/100L",
+                        "kg/100kg","mL/kg semente","g/kg semente","dose/ha"];
+            // unidade fora da lista (ensaio antigo, outro aparelho) aparece como está, em vez de "unid."
+            if(p.unidade && us.indexOf(p.unidade) < 0) us.push(p.unidade);
+            return us.map(u=>'<option value="'+esc(u)+'"'+((p.unidade||"")===u?" selected":"")+'>'+(esc(u)||"unid.")+'</option>').join("");
+          })()
         + '</select></div>'
         + '<div style="flex:none;width:66px">'
         + '<select data-acao="set-aplicacao" data-id="'+t.id+'" data-prod="'+p.id+'" '
@@ -4225,7 +4575,10 @@ function abaAvaliacoes(e){
       const v = av.dados[t.id+"|"+b];
       s += '<td>'+(fixaAv
         ? '<div style="padding:11px 6px;font-family:\'IBM Plex Mono\',monospace;font-weight:600">'+(v!=null&&v!==""?esc(v):"—")+'</div>'
-        : '<input inputmode="decimal" data-k="'+chave+'" data-campo="'+chave+'" value="'+esc(v==null?"":v)+'">')
+        /* valor que não é número fica em vermelho: a análise o conta como parcela
+           vazia, e sem a marca não havia como achar qual célula era */
+        : '<input inputmode="decimal" data-k="'+chave+'" data-campo="'+chave+'" value="'+esc(v==null?"":v)+'"'
+          + (v!=null && v!=="" && num(v)==null ? ' class="invalido" title="Não é um número"' : '')+'>')
         + '</td>';
     }
     s += '<td class="media">'+fmt(m)+'</td></tr>';
@@ -4547,28 +4900,64 @@ function telaTodasFotos(e){
    letra em cada célula e o CV embaixo — o formato da tabela de resultados do
    relatório. Tela, cópia e exportação usam esta mesma montagem. Avaliação sem
    malha completa fica de fora, e a lista `fora` diz quais. */
+/* Uma avaliação analisada do jeito que o ensaio pede: transformação da própria
+   avaliação e opções do fatorial. Tela, tabela final e relatório passam todos
+   por aqui — assim nunca mostram análises diferentes da mesma coisa. */
+function opcoesFatorial(e){
+  const o = e.fatOpc || {};
+  return {desdobrar: ["auto","sempre","nao"].indexOf(o.desdobrar) >= 0 ? o.desdobrar : "auto",
+          tipos: o.tipos || {}};
+}
+function analisarAv(e, av){
+  const orig = matrizDe(e, av);
+  const tf = TRANSF[av.transf] ? (av.transf || "") : "";
+  let dados = orig;
+  if(tf){
+    dados = orig.map(l=>l.map(v=>v==null ? null : TRANSF[tf].f(v)));
+    const ruins = dados.flat().filter(v=>v!=null && !Number.isFinite(v)).length;
+    if(ruins) return {erro:"transf", transf:tf, ruins};
+  }
+  const somaO = orig.map(l=>l.reduce((a,v)=>a+(v==null?0:v),0));
+  const r = anova(dados, e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e), e.tratamentos,
+                  e.teste, croquiDe(e,av), alfaDe(e), e.controle, {tipos: opcoesFatorial(e).tipos, somaO});
+  if(r.ok){
+    r.transf = tf;
+    r.medias.forEach(m=>{ m.mo = somaO[m.i]/e.nRep; });
+    r.mediaO = somaO.reduce((a,x)=>a+x,0)/(e.tratamentos.length*e.nRep);
+    if(r.dunnett) r.dunnett.linhas.forEach(x=>{ x.mo = somaO[x.i]/e.nRep; });
+  }
+  return r;
+}
+/* Média para MOSTRAR: a original quando os dados foram transformados. */
+function mostra(x){ return x.mo != null ? x.mo : x.media; }
+
 function tabelaFinal(e){
   const cols = [], fora = [];
   e.avaliacoes.forEach(av=>{
-    const r = anova(matrizDe(e,av), e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e),
-                    e.tratamentos, e.teste, croquiDe(e,av), alfaDe(e), e.controle);
+    const r = analisarAv(e, av);
     if(!r.ok){ fora.push(av.nome || "sem nome"); return; }
     /* Casas decimais pela grandeza, como se escreve à mão: produtividade em
        5.845, altura em 24,2, nota pequena em 1,25. */
-    const mx = Math.max(...r.medias.map(m=>Math.abs(m.media)));
+    const mx = Math.max(...r.medias.map(m=>Math.abs(mostra(m))));
     const cd = mx>=1000 ? 0 : mx>=10 ? 1 : 2;
     const cel = {};
     if(r.dunnett){
       r.dunnett.linhas.forEach(x=>{
-        cel[x.i] = fmt(x.media,cd) + (x.i===r.dunnett.iCtrl ? "" : " "+(x.difere?"*":"ns"));
+        cel[x.i] = fmt(mostra(x),cd) + (x.i===r.dunnett.iCtrl ? "" : " "+(x.difere?"*":"ns"));
       });
     } else {
-      r.medias.forEach(m=>{ cel[m.i] = fmt(m.media,cd)+" "+(m.letra||"a"); });
+      r.medias.forEach(m=>{ cel[m.i] = fmt(mostra(m),cd)+" "+(m.letra||"a"); });
     }
     cols.push({ nome: av.nome || "Avaliação", unidade: av.unidade || "", dias: diasTexto(av),
-                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett });
+                cel, cv: fmt(r.cv,2), dunnett: !!r.dunnett, transf: r.transf });
   });
   const nomeT = (TESTES[e.teste]||TESTES.tukey).nome;
+  // avaliação transformada: a nota diz qual e que as médias são as originais (como no SASM-Agri)
+  const transfs = [...new Set(cols.filter(c=>c.transf).map(c=>TRANSF[c.transf].nome))];
+  const notaTransf = transfs.length
+    ? " Para a análise, os dados de "+cols.filter(c=>c.transf).map(c=>c.nome).join(", ")
+      + " foram transformados em "+transfs.join(" / ")+"; as médias apresentadas são as originais."
+    : "";
   const nota = cols.some(c=>c.dunnett)
     ? "* difere da testemunha e ns não difere pelo teste de Dunnett a "+alfaTexto(alfaDe(e))
       + " de probabilidade de erro. C.V. = coeficiente de variação."
@@ -4577,7 +4966,7 @@ function tabelaFinal(e){
       + "C.V. = coeficiente de variação.";
   const linhas = e.tratamentos.map((t,i)=>({ t, nome: t.nome || ("T"+t.num), cels: cols.map(c=>c.cel[i] || "—") }))
                               .sort((a,b)=>a.t.num - b.t.num);
-  return { cols, linhas, fora, nota };
+  return { cols, linhas, fora, nota: nota + notaTransf };
 }
 
 function abaAnalise(e){
@@ -4589,6 +4978,8 @@ function abaAnalise(e){
   }
   const tst = TESTES[e.teste] ? e.teste : "tukey";
   const so = PERSIST.leitura;
+  const sel = 'style="border:1px solid var(--line-2);background:var(--surface);border-radius:var(--r-sm);'
+            + 'padding:9px 10px;min-height:40px;font-size:.86rem;max-width:100%"';
   let s = '<div class="sec"><div class="sec-cab"><div><div class="eyebrow">Análise estatística</div>'
     + '<h2>ANOVA e '+esc(TESTES[tst].nome)+' a '+alfaTexto(alfaDe(e))+'</h2></div>'
     + '<div class="linha" style="gap:8px">'
@@ -4599,48 +4990,96 @@ function abaAnalise(e){
     + ', '+e.tratamentos.length+' tratamentos e '+e.nRep+' repetições. Cada avaliação é analisada '
     + 'separadamente; médias seguidas da mesma letra não diferem entre si.</p>'
     + '<div class="linha" style="gap:10px">'
-    + (so ? '' : '<div class="campo" style="min-width:230px"><label>Comparação de médias</label>'
-        + '<select data-acao="set-teste" style="border:1px solid var(--line-2);background:var(--surface);'
-        + 'border-radius:var(--r-sm);padding:9px 10px;min-height:40px;font-size:.86rem">'
+    + (so ? '' : '<div class="campo" style="min-width:210px"><label>Comparação de médias</label>'
+        + '<select data-acao="set-teste" '+sel+'>'
         + Object.keys(TESTES).map(k=>'<option value="'+k+'"'+(tst===k?" selected":"")+'>'
             + TESTES[k].nome+'</option>').join("")
         + '</select></div>')
     + (so ? '' : '<div class="campo" style="min-width:120px"><label>Significância</label>'
-        + '<select data-acao="set-alfa" style="border:1px solid var(--line-2);background:var(--surface);'
-        + 'border-radius:var(--r-sm);padding:9px 10px;min-height:40px;font-size:.86rem">'
+        + '<select data-acao="set-alfa" '+sel+'>'
         + Object.keys(ALFAS).map(a=>'<option value="'+a+'"'+(alfaDe(e)===Number(a)?" selected":"")+'>'
             + ALFAS[a]+'</option>').join("")
         + '</select></div>')
     + (tst==="dunnett" && !so ? '<div class="campo" style="min-width:190px"><label>Testemunha</label>'
-        + '<select data-acao="set-controle" style="border:1px solid var(--line-2);background:var(--surface);'
-        + 'border-radius:var(--r-sm);padding:9px 10px;min-height:40px;font-size:.86rem">'
+        + '<select data-acao="set-controle" '+sel+'>'
         + e.tratamentos.map((t,i)=>'<option value="'+i+'"'+((e.controle||0)===i?" selected":"")+'>'
             + esc(t.num+". "+t.nome)+'</option>').join("")
         + '</select></div>' : '')
     + '<div class="campo" style="min-width:190px"><label>Ordem das médias</label>'
-        + '<select data-acao="set-ordem" style="border:1px solid var(--line-2);background:var(--surface);'
-        + 'border-radius:var(--r-sm);padding:9px 10px;min-height:40px;font-size:.86rem">'
+        + '<select data-acao="set-ordem" '+sel+'>'
         + '<option value="num"'+((TELA.ordem||"num")==="num"?" selected":"")+'>Número do tratamento</option>'
         + '<option value="media"'+(TELA.ordem==="media"?" selected":"")+'>Da maior para a menor</option>'
         + '</select></div>'
     + '<span style="font-size:.78rem;color:var(--muted);flex:1;min-width:200px;align-self:flex-end;padding-bottom:10px">'
-    + esc(TESTES[tst].desc)+'</span></div></div>';
+    + esc(TESTES[tst].desc)+'</span></div>';
+
+  /* Opções do fatorial, no espírito do SISVAR: como tratar a interação e, para
+     cada fator, se os níveis são categorias (comparar médias) ou números
+     (regressão). Ficam no ensaio e valem para todas as avaliações. */
+  const fatE = ehFatorial(e);
+  if(fatE && !so){
+    const op = opcoesFatorial(e);
+    s += '<div class="card card-p" style="margin-top:12px"><div class="eyebrow" style="margin-bottom:8px">'
+      + 'Fatorial '+arranjoTexto(fatE)+' — como analisar</div>'
+      + '<div class="linha" style="gap:10px;align-items:flex-start">'
+      + '<div class="campo" style="min-width:230px;flex:1"><label>Desdobramento da interação</label>'
+      + '<select data-acao="set-desdobrar" '+sel+'>'
+      + [["auto","Quando a interação for significativa"],["sempre","Sempre"],["nao","Não desdobrar"]]
+          .map(([v,t])=>'<option value="'+v+'"'+(op.desdobrar===v?" selected":"")+'>'+t+'</option>').join("")
+      + '</select><span class="dica">Estuda cada fator dentro de cada nível do outro, com a ANOVA do desdobramento e o teste — como no SISVAR.</span></div>';
+    fatE.forEach(f=>{
+      const podeQuant = fatorQuantitativo(f);
+      const tipo = op.tipos[f.id] === "quant" && podeQuant ? "quant" : "qual";
+      s += '<div class="campo" style="min-width:230px;flex:1"><label>Níveis de '+esc(f.nome||"fator")+'</label>'
+        + '<select data-acao="set-tipo-fator" data-id="'+f.id+'" '+sel+'>'
+        + '<option value="qual"'+(tipo==="qual"?" selected":"")+'>Categorias — comparar médias</option>'
+        + '<option value="quant"'+(tipo==="quant"?" selected":"")+(podeQuant?'':' disabled')+'>Números — regressão</option>'
+        + '</select><span class="dica">'+(podeQuant
+            ? 'Dose, taxa, época: a regressão mostra como a resposta muda ('+esc(f.niveis.map(n=>fmt(valorNivel(n.nome), null).replace(/,00$/,"")).join(" · "))+').'
+            : 'Para regressão, o nome de cada nível precisa começar com o número — ex.: “0,5 L/ha”.')
+        + '</span></div>';
+    });
+    s += '</div></div>';
+  }
+  s += '</div>';
 
   e.avaliacoes.forEach(av=>{
-    const r = anova(matrizDe(e,av), e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e), e.tratamentos, e.teste, croquiDe(e,av), alfaDe(e), e.controle);
+    const r = analisarAv(e, av);
+    const alfa = alfaDe(e);
     s += '<div class="sec"><div class="sec-cab"><div><h3>'+esc(av.nome)+'</h3>'
-      + '<div style="font-size:.78rem;color:var(--muted)">'+dataBr(av.data)+(av.unidade?' · '+esc(av.unidade):'')+'</div></div>';
+      + '<div style="font-size:.78rem;color:var(--muted)">'+dataBr(av.data)+(av.unidade?' · '+esc(av.unidade):'')
+      + (av.dae ? ' · '+esc(diasTexto(av)) : '')+'</div></div>';
     if(r.ok){
       const cvc = classeCV(r.cv);
-      const sig = r.p!=null && r.p<0.05;
+      const sig = r.p!=null && r.p<alfa;
       s += '<div class="linha">'
         + '<span class="pill '+(sig?"pill-a":"")+'">'+(sig?"significativo":"não significativo")+'</span>'
         + '<span class="pill '+cvc.c+'">CV '+fmt(r.cv,2)+'% · '+cvc.t+'</span></div>';
     }
     s += '</div>';
 
+    // transformação desta avaliação (SASM-Agri e SISVAR), com a recomendação por Box-Cox
+    if(!so){
+      const tf = TRANSF[av.transf] ? (av.transf||"") : "";
+      s += '<div class="linha" style="gap:8px;margin-bottom:10px;align-items:flex-end">'
+        + '<div class="campo" style="min-width:200px"><label>Transformação dos dados</label>'
+        + '<select data-acao="set-transf" data-av="'+av.id+'" '+sel+'>'
+        + Object.keys(TRANSF).map(k=>'<option value="'+k+'"'+(tf===k?" selected":"")+'>'+TRANSF[k].nome+'</option>').join("")
+        + '</select></div>'
+        + '<button class="b b-s" data-acao="recomendar-transf" data-id="'+av.id+'" style="margin-bottom:2px">Recomendar</button>'
+        + (TELA.recomTransf && TELA.recomTransf.av===av.id
+            ? '<span style="font-size:.8rem;color:var(--ink-2);flex:1;min-width:220px;margin-bottom:6px">'+esc(TELA.recomTransf.txt)
+              + (TELA.recomTransf.chave!=null ? ' <button class="b b-s b-p" data-acao="aplicar-transf" data-id="'+av.id
+                  + '" data-chave="'+TELA.recomTransf.chave+'" style="margin-left:6px">Usar '+esc(TRANSF[TELA.recomTransf.chave].nome)+'</button>' : '')
+              + '</span>' : '')
+        + '</div>';
+    }
+
     if(!r.ok){
-      const msg = r.erro==="faltam"
+      const msg = r.erro==="transf"
+        ? 'A transformação <b>'+esc(TRANSF[r.transf].nome)+'</b> só se aplica a '+esc(TRANSF[r.transf].regra)
+          + ', e esta avaliação tem <b>'+r.ruins+'</b> valor(es) fora disso. Escolha outra, ou volte para Nenhuma.'
+        : r.erro==="faltam"
         ? 'Faltam <b>'+r.faltando+'</b> de '+r.total+' parcelas. Complete a malha para a análise rodar.'
         : r.erro==="poucos_trat" ? 'São necessários ao menos 2 tratamentos.'
         : r.erro==="poucas_rep"  ? 'São necessárias ao menos 2 repetições.'
@@ -4658,64 +5097,24 @@ function abaAnalise(e){
       return;
     }
 
-    // quadro da ANOVA
-    s += '<div class="tab-box"><table class="dados"><thead><tr>'
-      + '<th>Fonte de variação</th><th>GL</th><th>SQ</th><th>QM</th><th>F</th><th>p-valor</th>'
-      + '</tr></thead><tbody>';
-    r.fonte.forEach(f=>{
-      const sg = f.p!=null ? (f.p<0.01?"**":f.p<0.05?"*":"ns") : "";
-      const rec = f.nivel===1 ? 'padding-left:28px;color:var(--ink-2)' : '';
-      s += '<tr'+(f.destaque?' style="background:var(--surface-3)"':'')+'>'
-        + '<td style="'+(f.destaque?'font-weight:600':'')+rec+'">'
-        + (f.nivel===1?'<span style="color:var(--muted);margin-right:6px">└</span>':'')+esc(f.nome)+'</td>'
-        + '<td>'+f.gl+'</td><td>'+fmt(f.sq,4)+'</td>'
-        + '<td>'+(f.qm!=null?fmt(f.qm,4):"—")+'</td>'
-        + '<td>'+(f.f!=null?fmt(f.f,3):"—")+'</td>'
-        + '<td>'+(f.p!=null?(f.p<0.0001?"&lt;0,0001":fmt(f.p,4))+' <b class="letra">'+sg+'</b>':"—")+'</td></tr>';
-    });
-    s += '</tbody></table></div>';
-    const nmT = (TESTES[r.teste]||TESTES.tukey).nome;
+    s += htmlQuadroAnova(r.fonte);
+    const nmT = r.testeNome || (TESTES[r.teste]||TESTES.tukey).nome;
     s += '<div class="linha" style="font-size:.76rem;color:var(--muted);gap:14px">'
-      + '<span>Média geral: <b class="mono">'+fmt(r.media)+'</b></span>'
+      + '<span>Média geral: <b class="mono">'+fmt(r.transf ? r.mediaO : r.media)+'</b>'
+      + (r.transf ? ' (transformada: '+fmt(r.media,4)+')' : '')+'</span>'
       + '<span>CV'+(r.cvA!=null?' (subparcela)':'')+': <b class="mono">'+fmt(r.cv,2)+'%</b></span>'
       + (r.cvA!=null ? '<span>CV (parcela): <b class="mono">'+fmt(r.cvA,2)+'%</b></span>' : '')
-      + (r.dms!=null ? '<span>DMS '+esc(nmT)+' '+alfaTexto(r.alfa)+': <b class="mono">'+fmt(r.dms)+'</b></span>' : '')
+      + (r.dms!=null ? '<span>DMS '+esc(nmT)+' '+alfaTexto(r.alfa)+(r.transf?' (escala transformada)':'')+': <b class="mono">'+fmt(r.dms)+'</b></span>' : '')
       + (r.critNome ? '<span>'+esc(r.critNome)+': <b class="mono">'+fmt(r.critValor,3)+'</b></span>' : '')
       + (r.teste==="sk" ? '<span>agrupamento por razão de verossimilhança</span>' : '')
       + '<span>** p&lt;0,01 · * p&lt;0,05 · ns não significativo</span></div>';
-
-    // médias de cada fator, quando o ensaio é fatorial
-    if(r.fatorial){
-      const inter = r.fatorial.pInt!=null && r.fatorial.pInt<0.05;
-      s += '<div class="aviso '+(inter?'aviso-w':'aviso-i')+'" style="margin-top:12px"><span>'
-        + (inter?'&#9888;':'&#8505;')+'</span><div>'
-        + (inter
-            ? '<b>A interação foi significativa.</b> Os fatores não agem de forma independente: '
-              + 'interprete as combinações na tabela de tratamentos abaixo, não as médias isoladas de cada fator.'
-            : 'Interação não significativa — os fatores podem ser interpretados separadamente, '
-              + 'pelas médias de cada um abaixo.')
-        + '</div></div>';
-      // fatorial com testemunha: o contraste diz se tratar fez diferença, antes de comparar doses
-      if(r.fatorial.adicionais && r.fatorial.adicionais.length){
-        const ct = r.fonte.find(l=>l.adicional && /vs\. fatorial/.test(l.nome));
-        const sig = ct && ct.p!=null && ct.p < 0.05;
-        s += '<div class="aviso '+(sig?'aviso-i':'aviso-w')+'" style="margin-top:12px"><span>&#8505;</span><div>'
-          + r.fatorial.adicionais.map(a=>'<b>'+esc(a.nome||("T"+a.num))+'</b> (testemunha): média '+fmt(a.media)).join(" · ")
-          + ' · fatorial: média '+fmt(r.fatorial.mediaFatorial)+'. '
-          + (sig ? 'A diferença entre testemunha e fatorial é significativa.'
-                 : 'A testemunha não difere do conjunto do fatorial.')
-          + '</div></div>';
-      }
-      r.fatorial.medias.forEach(fm=>{
-        s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
-          + '<th>'+esc(fm.fator)+'</th><th>Média</th><th>'+esc((TESTES[r.teste]||TESTES.tukey).nome)+'</th></tr></thead><tbody>';
-        fm.linhas.forEach(x=>{
-          s += '<tr><td>'+esc(x.nome||"(sem nome)")+'</td><td>'+fmt(x.media)+'</td>'
-            + '<td><span class="letra">'+esc(x.letra||"a")+'</span></td></tr>';
-        });
-        s += '</tbody></table></div>';
-      });
+    if(r.transf){
+      s += '<p style="font-size:.76rem;color:var(--muted);margin-top:4px">Análise feita com os dados transformados em <b>'
+        + esc(TRANSF[r.transf].nome)+'</b>. As médias abaixo são as originais, na unidade da avaliação; as letras vêm da análise transformada.</p>';
     }
+    s += htmlPressupostos(r.pressupostos, alfa);
+
+    if(r.fatorial) s += htmlFatorial(e, r, av);
 
     // Dunnett tem tabela própria: diferença para a testemunha, não letras
     if(r.dunnett){
@@ -4728,17 +5127,18 @@ function abaAnalise(e){
       const ordD = TELA.ordem === "media"
         ? r.dunnett.linhas.slice().sort((a,b)=>b.media-a.media)
         : r.dunnett.linhas.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
+      const mC = mostra(r.dunnett.linhas.find(x=>x.i===r.dunnett.iCtrl));
       s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
         + '<th>Tratamento</th><th style="text-align:left">Dose</th><th>Média</th>'
         + '<th>Dif. p/ testemunha</th><th>Dunnett</th></tr></thead><tbody>';
       ordD.forEach(x=>{
-        const t = e.tratamentos[x.i], ctrl = x.i===r.dunnett.iCtrl;
+        const t = e.tratamentos[x.i], ctrl = x.i===r.dunnett.iCtrl, dif = mostra(x) - mC;
         s += '<tr'+(ctrl?' style="background:var(--surface-3)"':'')+'>'
           + '<td'+(ctrl?' style="font-weight:600"':'')+'>'+esc(t.num+". "+t.nome)
           + (ctrl?' <span class="pill" style="margin-left:6px">testemunha</span>':'')+'</td>'
           + '<td style="text-align:left;color:var(--muted)">'+(esc(doseTexto(t))||"—")+'</td>'
-          + '<td>'+fmt(x.media)+'</td>'
-          + '<td>'+(ctrl?"—":(x.dif>0?"+":"")+fmt(x.dif))+'</td>'
+          + '<td>'+fmt(mostra(x))+'</td>'
+          + '<td>'+(ctrl?"—":(dif>0?"+":"")+fmt(dif))+'</td>'
           + '<td><b class="letra">'+(ctrl?"—":(x.difere?"*":"ns"))+'</b></td></tr>';
       });
       s += '</tbody></table></div>'
@@ -4752,22 +5152,234 @@ function abaAnalise(e){
     const ord = TELA.ordem === "media"
       ? r.medias.slice().sort((a,b)=>b.media-a.media)
       : r.medias.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
-    const mx = Math.max(...r.medias.map(m=>m.media));
+    const mx = Math.max(...r.medias.map(m=>mostra(m)));
     s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
-      + '<th>Tratamento</th><th style="text-align:left">Dose</th><th>Média</th><th>'+esc((TESTES[r.teste]||TESTES.tukey).nome)+'</th><th style="width:32%">Comparação</th>'
+      + '<th>Tratamento</th><th style="text-align:left">Dose</th><th>Média</th><th>'+esc(nmT)+'</th><th style="width:32%">Comparação</th>'
       + '</tr></thead><tbody>';
     ord.forEach(m=>{
       const t = e.tratamentos[m.i];
-      const pc = mx>0 ? Math.max(2, 100*m.media/mx) : 0;
+      const pc = mx>0 ? Math.max(2, 100*mostra(m)/mx) : 0;
       s += '<tr><td>'+esc(t.num+". "+t.nome)+'</td>'
         + '<td style="text-align:left;color:var(--muted)">'+(esc(doseTexto(t))||"—")+'</td>'
-        + '<td>'+fmt(m.media)+'</td>'
+        + '<td>'+fmt(mostra(m))+'</td>'
         + '<td><span class="letra">'+esc(m.letra||"a")+'</span></td>'
         + '<td><div class="barra"><i style="width:'+pc.toFixed(1)+'%"></i></div></td></tr>';
     });
     s += '</tbody></table></div></div>';
   });
   return s + secaoTabelaFinal(e);
+}
+
+/* Quadro de ANOVA: o mesmo desenho para a análise e para o desdobramento. */
+function htmlQuadroAnova(linhas){
+  let s = '<div class="tab-box"><table class="dados"><thead><tr>'
+    + '<th>Fonte de variação</th><th>GL</th><th>SQ</th><th>QM</th><th>F</th><th>p-valor</th>'
+    + '</tr></thead><tbody>';
+  linhas.forEach(f=>{
+    const sg = f.p!=null ? (f.p<0.01?"**":f.p<0.05?"*":"ns") : "";
+    const rec = f.nivel===1 ? 'padding-left:28px;color:var(--ink-2)' : '';
+    const gl = Number.isInteger(f.gl) ? f.gl : fmt(f.gl,1);
+    s += '<tr'+(f.destaque?' style="background:var(--surface-3)"':'')+'>'
+      + '<td style="'+(f.destaque?'font-weight:600':'')+rec+';white-space:normal">'
+      + (f.nivel===1?'<span style="color:var(--muted);margin-right:6px">└</span>':'')+esc(f.nome)+'</td>'
+      + '<td>'+gl+'</td><td>'+(f.sq!=null?fmt(f.sq,4):"—")+'</td>'
+      + '<td>'+(f.qm!=null?fmt(f.qm,4):"—")+'</td>'
+      + '<td>'+(f.f!=null?fmt(f.f,3):"—")+'</td>'
+      + '<td>'+(f.p!=null?(f.p<0.0001?"&lt;0,0001":fmt(f.p,4))+' <b class="letra">'+sg+'</b>':"—")+'</td></tr>';
+  });
+  return s + '</tbody></table></div>';
+}
+
+/* Pressupostos em uma linha: normalidade dos resíduos e homogeneidade das
+   variâncias. Falhou algum, o texto diz o que fazer — e o que fazer é quase
+   sempre o botão Recomendar logo acima. */
+function htmlPressupostos(p, alfa){
+  if(!p || (!p.normal && !p.homog)) return '';
+  const item = (nome, teste, x) => {
+    if(!x) return '';
+    const ok = x.p >= 0.05;
+    return '<span class="pill '+(ok?'pill-a':'pill-w')+'" title="'+esc(teste)+'">'+(ok?'&#10003; ':'&#9888; ')
+      + nome+' · p = '+(x.p<0.001?'&lt;0,001':fmt(x.p,3))+'</span>';
+  };
+  const falhou = (p.normal && p.normal.p < 0.05) || (p.homog && p.homog.p < 0.05);
+  return '<div class="linha" style="gap:6px;margin-top:8px;align-items:center">'
+    + '<span style="font-size:.74rem;color:var(--muted)">Pressupostos:</span>'
+    + item("resíduos normais", "Shapiro-Wilk (W = "+(p.normal?fmt(p.normal.W,4):"—")+")", p.normal)
+    + item("variâncias homogêneas", "Bartlett (χ² = "+(p.homog?fmt(p.homog.chi,3):"—")+")", p.homog)
+    + '</div>'
+    + (falhou ? '<p style="font-size:.76rem;color:var(--alerta);margin-top:4px;max-width:72ch">'
+        + 'Um pressuposto da ANOVA falhou a 5% (Shapiro-Wilk para normalidade, Bartlett para homogeneidade). '
+        + 'As letras podem não ser confiáveis — experimente uma transformação: o botão <b>Recomendar</b> indica qual.</p>' : '');
+}
+
+/* O bloco do fatorial: interação, testemunha, e depois ou os efeitos
+   principais ou o desdobramento — conforme a opção e o resultado. */
+function htmlFatorial(e, r, av){
+  const F = r.fatorial, op = opcoesFatorial(e), alfa = r.alfa;
+  const inter = F.pInt!=null && F.pInt < alfa;
+  const temDesd = F.desd && F.desd.length >= 2;
+  const desdobra = temDesd && (op.desdobrar === "sempre" || (op.desdobrar === "auto" && inter));
+  const principais = !desdobra || op.desdobrar === "sempre";
+  let s = '<div class="aviso '+(inter?'aviso-w':'aviso-i')+'" style="margin-top:12px"><span>'
+    + (inter?'&#9888;':'&#8505;')+'</span><div>'
+    + (inter
+        ? '<b>A interação foi significativa.</b> Os fatores não agem de forma independente'
+          + (desdobra ? ' — por isso, abaixo, o <b>desdobramento</b>: cada fator dentro de cada nível do outro.'
+                      : '. Com o desdobramento desligado, interprete pelas combinações na tabela de tratamentos.')
+        : 'Interação não significativa — os fatores podem ser interpretados separadamente, '
+          + 'pelos efeitos principais abaixo.' + (desdobra ? ' O desdobramento vem em seguida, como pedido.' : ''))
+    + '</div></div>';
+  // fatorial com testemunha: o contraste diz se tratar fez diferença, antes de comparar doses
+  if(F.adicionais && F.adicionais.length){
+    const ct = r.fonte.find(l=>l.adicional && /vs\. fatorial/.test(l.nome));
+    const sig = ct && ct.p!=null && ct.p < alfa;
+    s += '<div class="aviso '+(sig?'aviso-i':'aviso-w')+'" style="margin-top:12px"><span>&#8505;</span><div>'
+      + F.adicionais.map(a=>'<b>'+esc(a.nome||("T"+a.num))+'</b> (testemunha): média '+fmt(mostra(a))).join(" · ")
+      + ' · fatorial: média '+fmt(F.mediaFatorialO!=null ? F.mediaFatorialO : F.mediaFatorial)+'. '
+      + (sig ? 'A diferença entre testemunha e fatorial é significativa.'
+             : 'A testemunha não difere do conjunto do fatorial.')
+      + '</div></div>';
+  }
+  if(principais){
+    F.medias.forEach(fm=>{
+      if(fm.reg){
+        s += htmlRegressao(fm.reg, fm.fator, av, 'Efeito de '+fm.fator+' (média dos demais fatores)');
+        return;
+      }
+      s += '<div class="tab-box" style="margin-top:12px"><table class="dados"><thead><tr>'
+        + '<th>'+esc(fm.fator)+'</th><th>Média</th><th>'+esc(fm.teste||r.testeNome||"")+'</th></tr></thead><tbody>';
+      fm.linhas.forEach(x=>{
+        s += '<tr><td>'+esc(x.nome||"(sem nome)")+'</td><td>'+fmt(mostra(x))+'</td>'
+          + '<td><span class="letra">'+esc(x.letra||"a")+'</span></td></tr>';
+      });
+      s += '</tbody></table></div>';
+    });
+  }
+  if(desdobra) s += htmlDesdobramento(F.desd, r, av);
+  return s;
+}
+
+function htmlDesdobramento(desd, r, av){
+  const alfa = r.alfa;
+  let s = '<div class="eyebrow" style="margin-top:18px">Desdobramento da interação</div>';
+  // ANOVA do desdobramento, como o SISVAR mostra antes do teste
+  const linhas = [];
+  const erros = [];
+  desd.forEach(d=>{
+    d.blocos.forEach(b=>linhas.push({nome:d.fator+" d. "+b.rot, gl:b.gl, sq:b.sq, qm:b.qm, f:b.f, p:b.p}));
+    if(!erros.some(x=>x.nome===d.erro.nome)) erros.push(d.erro);
+  });
+  // a variância complexa não tem SQ própria: é uma combinação de dois quadrados médios
+  erros.forEach(x=>linhas.push({nome:x.nome, gl:x.gl, qm:x.qm, sq: /Satterthwaite/.test(x.nome) ? null : x.qm*x.gl}));
+  s += htmlQuadroAnova(linhas);
+  const nome2 = desd.find(d=>!d.quant && d.blocos[0] && d.blocos[0].teste);
+  const nomeTeste = nome2 ? nome2.blocos[0].teste : (r.testeNome||"");
+
+  /* Dois fatores de categorias: a tabela de dupla entrada do relatório.
+     Linhas = níveis do 1º fator, colunas = níveis do 2º. Minúscula compara na
+     coluna (1º fator dentro de cada nível do 2º); maiúscula, na linha. */
+  if(desd.length === 2 && !desd[0].quant && !desd[1].quant){
+    const A = desd[0], B = desd[1];
+    const nivA = A.blocos[0].niveis.map(x=>x.id), nivB = B.blocos[0].niveis.map(x=>x.id);
+    const nomeA = A.blocos[0].niveis.map(x=>x.nome), nomeB = B.blocos[0].niveis.map(x=>x.nome);
+    s += '<div class="tab-box" style="margin-top:12px"><table class="dados tab-final"><thead><tr>'
+      + '<th>'+esc(A.fator)+' \\ '+esc(B.fator)+'</th>'+nomeB.map(n=>'<th>'+esc(n)+'</th>').join("")+'</tr></thead><tbody>';
+    nivA.forEach((ai, i)=>{
+      s += '<tr><td>'+esc(nomeA[i])+'</td>';
+      nivB.forEach((bj, j)=>{
+        const colB = A.blocos.find(b=>b.ids[0]===bj);         // A dentro de B = bj
+        const linA = B.blocos.find(b=>b.ids[0]===ai);         // B dentro de A = ai
+        const cel = colB && colB.niveis.find(x=>x.id===ai);
+        const up = linA && linA.niveis.find(x=>x.id===bj);
+        s += '<td>'+(cel ? fmt(mostra(cel)) + ' <span class="letra">'+esc(cel.letra||"")
+               + '</span><span class="letra">'+esc((up&&up.letra||"").toUpperCase())+'</span>' : '—')+'</td>';
+      });
+      s += '</tr>';
+    });
+    s += '</tbody></table></div>'
+      + '<p style="font-size:.76rem;color:var(--muted);max-width:80ch">Médias seguidas pela mesma letra '
+      + '<b>minúscula na coluna</b> (compara '+esc(A.fator)+') e <b>maiúscula na linha</b> (compara '+esc(B.fator)
+      + ') não diferem entre si pelo teste de '+esc(nomeTeste)+' a '+alfaTexto(alfa)+'.'
+      + (desd.some(d=>/Satterthwaite/.test(d.erro.nome)) ? ' Na parcela subdividida, '+esc(A.fator)
+          + ' dentro de cada '+esc(B.fator)+' é testado pela variância complexa, com GL de Satterthwaite.' : '')
+      + '</p>';
+    return s;
+  }
+
+  // demais casos: fator quantitativo (regressão em cada nível do outro) ou 3+ fatores
+  desd.forEach(d=>{
+    if(d.quant){
+      d.blocos.forEach(b=>{ s += htmlRegressao(b.reg, d.fator, av, d.fator+' dentro de '+b.rot); });
+      return;
+    }
+    const nomes = d.blocos[0].niveis.map(x=>x.nome);
+    s += '<div class="tab-box" style="margin-top:12px"><table class="dados tab-final"><thead><tr>'
+      + '<th>'+esc(d.fator)+' dentro de '+esc(d.dentroDe)+'</th>'+nomes.map(n=>'<th>'+esc(n)+'</th>').join("")
+      + '</tr></thead><tbody>';
+    d.blocos.forEach(b=>{
+      s += '<tr><td>'+esc(b.rot)+'</td>'+b.niveis.map(x=>'<td>'+fmt(mostra(x))
+        + ' <span class="letra">'+esc(x.letra||"")+'</span></td>').join("")+'</tr>';
+    });
+    s += '</tbody></table></div>'
+      + '<p style="font-size:.76rem;color:var(--muted)">Em cada linha, médias de '+esc(d.fator)
+      + ' seguidas da mesma letra não diferem pelo teste de '+esc(d.blocos[0].teste||nomeTeste)+' a '+alfaTexto(alfa)+'.</p>';
+  });
+  return s;
+}
+
+/* Regressão: quadro dos graus, equação indicada, R², ponto de máximo e o
+   gráfico — pontos das médias e a curva ajustada. */
+function htmlRegressao(reg, nomeFator, av, titulo){
+  let s = '<div class="card card-p" style="margin-top:12px"><div class="eyebrow" style="margin-bottom:6px">'
+    + 'Regressão · '+esc(titulo)+'</div>';
+  if(!reg){
+    return s + '<p style="font-size:.83rem;color:var(--muted)">Não deu para ajustar: os níveis precisam ser números diferentes entre si.</p></div>';
+  }
+  const linhas = reg.comps.map(c=>({nome:c.nome, gl:1, sq:c.sq, qm:c.qm, f:c.f, p:c.p}));
+  if(reg.desvio) linhas.push({nome:"Desvios da regressão", gl:reg.desvio.gl, sq:reg.desvio.sq, qm:reg.desvio.qm, f:reg.desvio.f, p:reg.desvio.p});
+  s += htmlQuadroAnova(linhas);
+  const esc1 = reg.escolhido;
+  s += '<div class="linha" style="gap:14px;align-items:flex-start;margin-top:10px">';
+  s += '<div style="flex:1;min-width:240px;font-size:.88rem">';
+  if(esc1){
+    s += '<div><b>Modelo indicado: '+esc(esc1.nome.toLowerCase())+'</b></div>'
+      + '<div class="mono" style="margin:4px 0">'+esc(equacaoTexto(esc1.coef))+'</div>'
+      + '<div>R² = '+fmt(esc1.r2*100,1)+'%</div>'
+      + (reg.otimo ? '<div style="margin-top:4px">Ponto de '+reg.otimo.tipo+': <b>'+esc(nomeFator)+' = '+fmt(reg.otimo.x,2)
+          + '</b> → '+fmt(reg.otimo.y,2)+'</div>' : '')
+      + (reg.desvio && reg.desvio.p < 0.05 ? '<div style="color:var(--alerta);margin-top:4px">Os desvios da regressão são significativos: o polinômio não descreve bem todos os níveis.</div>' : '');
+  } else {
+    s += '<div><b>Nenhum grau da regressão foi significativo.</b></div>'
+      + '<div style="color:var(--muted)">A resposta não muda de forma consistente com '+esc(nomeFator)+' — a média geral descreve o efeito.</div>';
+  }
+  s += '<div style="font-size:.74rem;color:var(--muted);margin-top:6px">x = '+esc(nomeFator)+' (número lido do nome de cada nível)'
+    + (av && av.transf ? '; y na escala transformada' : '')+'. O modelo indicado é o de maior grau significativo.</div>';
+  s += '</div>' + svgRegressao(reg) + '</div></div>';
+  return s;
+}
+function svgRegressao(reg){
+  const W = 300, H = 170, ml = 44, mr = 10, mt = 10, mb = 26;
+  const xs = reg.xs, ys = reg.ys;
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const curva = [];
+  if(reg.escolhido) for(let k=0;k<=40;k++){ const x = x0 + (x1-x0)*k/40; curva.push([x, polinomio(reg.escolhido.coef, x)]); }
+  const todosY = ys.concat(curva.map(c=>c[1]));
+  let y0 = Math.min(...todosY), y1 = Math.max(...todosY);
+  if(y1 - y0 < 1e-9){ y0 -= 1; y1 += 1; }
+  const pad = (y1-y0)*0.08; y0 -= pad; y1 += pad;
+  const X = x => ml + (x1===x0 ? 0.5 : (x-x0)/(x1-x0))*(W-ml-mr);
+  const Y = y => mt + (1-(y-y0)/(y1-y0))*(H-mt-mb);
+  let g = '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" style="max-width:100%;height:auto;flex:none" role="img" aria-label="Gráfico da regressão">'
+    + '<line x1="'+ml+'" y1="'+(H-mb)+'" x2="'+(W-mr)+'" y2="'+(H-mb)+'" stroke="var(--line-2)"/>'
+    + '<line x1="'+ml+'" y1="'+mt+'" x2="'+ml+'" y2="'+(H-mb)+'" stroke="var(--line-2)"/>';
+  [y0+pad, (y0+y1)/2, y1-pad].forEach(v=>{
+    g += '<line x1="'+ml+'" x2="'+(W-mr)+'" y1="'+Y(v).toFixed(1)+'" y2="'+Y(v).toFixed(1)+'" stroke="var(--line)" stroke-dasharray="2 3"/>'
+      + '<text x="'+(ml-5)+'" y="'+(Y(v)+3).toFixed(1)+'" text-anchor="end" font-size="9" fill="var(--muted)">'+fmt(v, Math.abs(v)>=100?0:Math.abs(v)>=10?1:2)+'</text>';
+  });
+  xs.forEach(x=>{ g += '<text x="'+X(x).toFixed(1)+'" y="'+(H-mb+13)+'" text-anchor="middle" font-size="9" fill="var(--muted)">'+fmt(x, Number.isInteger(x)?0:2)+'</text>'; });
+  if(curva.length) g += '<path d="'+curva.map((c,k)=>(k?'L':'M')+X(c[0]).toFixed(1)+' '+Y(c[1]).toFixed(1)).join(' ')+'" fill="none" stroke="var(--accent)" stroke-width="2"/>';
+  xs.forEach((x,k)=>{ g += '<circle cx="'+X(x).toFixed(1)+'" cy="'+Y(ys[k]).toFixed(1)+'" r="3.5" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.5"/>'; });
+  return g + '</svg>';
 }
 
 function secaoTabelaFinal(e){
@@ -4944,14 +5556,26 @@ function modalExperimento(e){
       + (e?'<button type="button" class="b b-perigo b-ghost" data-acao="del-exp" style="margin-right:auto">Excluir ensaio</button>':'')
       + '<button type="button" class="b" data-acao="fechar">Cancelar</button>'
       + '<button type="submit" class="b b-p">'+(e?"Salvar":"Criar experimento")+'</button></div></form>');
-  document.getElementById("f-exp").addEventListener("submit", ev=>{
+  document.getElementById("f-exp").addEventListener("submit", async ev=>{
     ev.preventDefault();
     const d = Object.fromEntries(new FormData(ev.target));
     if(!d.nome || !d.nome.trim()){ toast("Dê um nome ao ensaio"); return; }
     if(e){
+      const nRepNovo = Math.max(2, Number(d.nRep)||e.nRep);
+      /* Menos repetições com dados lançados: os valores dos blocos que somem
+         continuam guardados, mas saem da análise. Antes acontecia calado. */
+      if(nRepNovo < e.nRep){
+        const afetadas = e.avaliacoes.filter(av=>Object.keys(av.dados||{}).some(k=>{
+          const b = Number(k.split("|")[1]); return b >= nRepNovo && av.dados[k] !== "";
+        }));
+        if(afetadas.length && !await confirmar("Passar de "+e.nRep+" para "+nRepNovo+" repetições? "
+            + "<b>"+afetadas.length+"</b> avaliação(ões) têm dados nos blocos que saem. Eles ficam "
+            + "guardados, mas deixam de entrar na tabela e na análise — voltam se você "
+            + "aumentar as repetições de novo.", "Reduzir")) return;
+      }
       Object.assign(e, {nome:d.nome, cultura:d.cultura, cultivar:d.cultivar, local:d.local,
         coordenadas:(d.coordenadas||"").trim(),
-        safra:d.safra, grupoId:d.grupoId||"", delineamento:d.delineamento, teste:d.teste, nRep:Math.max(2,Number(d.nRep)||e.nRep),
+        safra:d.safra, grupoId:d.grupoId||"", delineamento:d.delineamento, teste:d.teste, nRep:nRepNovo,
         areaParcela:num(d.areaParcela), vazao:d.vazao, dataPlantio:d.dataPlantio,
         responsavel:d.responsavel});
       marcarSujo(); fecharModal(); render(); toast("Ficha atualizada");
@@ -5012,6 +5636,16 @@ function modalAvaliacao(e){
     fecharModal(); novaAvaliacao(e, d);
   });
 }
+/* Fecha a foto em tela cheia e solta a versão ampliada da MEMÓRIA — ela
+   continua na gaveta do aparelho e volta de lá na próxima vez. Sem isto cada
+   foto aberta ficava presa na memória até fechar o app: centenas numa tarde de
+   conferência bastavam para o Android derrubar o app num celular mais simples. */
+function fecharFoto(){
+  const lb = document.querySelector(".lightbox"); if(!lb) return;
+  const e = exp(), f = e && (e.fotos||[]).find(x=>x.id===lb.dataset.foto);
+  if(f && f.local && f.media) delete f.media;
+  lb.remove();
+}
 function verFoto(e, id){
   const x = e.fotos.find(f=>f.id===id); if(!x) return;
   const t = e.tratamentos.find(y=>y.id===x.tratId);
@@ -5033,14 +5667,17 @@ function verFoto(e, id){
     + (q?'<span class="pill" style="'+chip+'">'+esc(q.titulo||"Quadro")+'</span>':'')
     + (etq?'<div style="flex-basis:100%;font-size:.95rem;font-family:Calibri,Carlito,'
           + '\'Segoe UI\',Roboto,sans-serif">'+esc(etq)+'</div>':'')
-    + (x.link?'<a href="'+esc(x.link)+'" target="_blank" rel="noopener" style="color:#95C061;font-size:.85rem">Abrir arquivo original &#8599;</a>':'')
+    /* Só endereço web vira link: um "javascript:" colado ali rodaria código
+       dentro do app de quem tocasse. */
+    + (/^https?:\/\//i.test(x.link||"") ? '<a href="'+esc(x.link)+'" target="_blank" rel="noopener" style="color:#95C061;font-size:.85rem">Abrir arquivo original &#8599;</a>':'')
     + '<button class="b b-s" data-acao="salvar-foto" data-id="'+x.id+'" style="'+chip+'">'
     + '&#11015; Salvar no celular</button>'
     + '<div style="flex-basis:100%;font-size:.76rem;color:#8E9880">A etiqueta sai impressa '
     + 'junto. Segurar a foto também funciona.</div>'
     + (PERSIST.leitura?'':'<button class="b b-s b-perigo" data-acao="del-foto" data-id="'+x.id+'" style="margin-left:auto;background:transparent">Excluir foto</button>')
     + '</div>';
-  d.addEventListener("click", ev=>{ if(ev.target===d) d.remove(); });
+  d.dataset.foto = x.id;
+  d.addEventListener("click", ev=>{ if(ev.target===d) fecharFoto(); });
   document.body.appendChild(d);
   /* Troca pela versão com a etiqueta queimada assim que ela fica pronta: a foto
      limpa aparece na hora e o usuário não espera o canvas para ver o que abriu. */
@@ -5128,6 +5765,85 @@ async function exportarPlanilha(e, ids){
 }
 
 /* --------- EXPORTAR --------- */
+/* Texto do quadro de ANOVA, colunas separadas por TAB (cola em colunas no Excel). */
+function textoQuadro(linhas){
+  let t = "FV\tGL\tSQ\tQM\tF\tp-valor\n";
+  linhas.forEach(f=>{
+    t += f.nome+"\t"+(Number.isInteger(f.gl) ? f.gl : fmt(f.gl,1))+"\t"+(f.sq!=null?fmt(f.sq,4):"")+"\t"
+       + (f.qm!=null?fmt(f.qm,4):"")+"\t"+(f.f!=null?fmt(f.f,3):"")+"\t"+(f.p!=null?fmt(f.p,4):"")+"\n";
+  });
+  return t;
+}
+function textoRegressao(reg, titulo){
+  if(!reg) return "\nRegressão — "+titulo+": não ajustada (níveis sem valor numérico)\n";
+  const linhas = reg.comps.map(c=>({nome:c.nome, gl:1, sq:c.sq, qm:c.qm, f:c.f, p:c.p}));
+  if(reg.desvio) linhas.push({nome:"Desvios da regressão", gl:reg.desvio.gl, sq:reg.desvio.sq, qm:reg.desvio.qm, f:reg.desvio.f, p:reg.desvio.p});
+  let t = "\nRegressão — "+titulo+"\n" + textoQuadro(linhas);
+  if(reg.escolhido){
+    t += "Modelo indicado ("+reg.escolhido.nome.toLowerCase()+"): "+equacaoTexto(reg.escolhido.coef)
+       + "   R² = "+fmt(reg.escolhido.r2*100,1)+"%\n";
+    if(reg.otimo) t += "Ponto de "+reg.otimo.tipo+": x = "+fmt(reg.otimo.x,2)+" → ŷ = "+fmt(reg.otimo.y,2)+"\n";
+  } else t += "Nenhum grau da regressão foi significativo.\n";
+  return t;
+}
+/* O fatorial no relatório: segue a mesma decisão da tela (efeitos principais,
+   desdobramento ou os dois). */
+function textoFatorial(e, r){
+  const F = r.fatorial, op = opcoesFatorial(e), alfa = r.alfa;
+  const inter = F.pInt!=null && F.pInt < alfa;
+  const temDesd = F.desd && F.desd.length >= 2;
+  const desdobra = temDesd && (op.desdobrar === "sempre" || (op.desdobrar === "auto" && inter));
+  const principais = !desdobra || op.desdobrar === "sempre";
+  let t = "\nInteração "+(inter?"SIGNIFICATIVA":"não significativa")+" a "+alfaTexto(alfa)
+        + (inter ? (desdobra ? " — desdobramento abaixo." : " — interpretar pelas combinações.")
+                 : " — os fatores podem ser interpretados separadamente.")+"\n";
+  if(F.adicionais && F.adicionais.length){
+    t += F.adicionais.map(a=>(a.nome||("T"+a.num))+" (testemunha): média "+fmt(mostra(a))).join("; ")
+       + "; fatorial: média "+fmt(F.mediaFatorialO!=null ? F.mediaFatorialO : F.mediaFatorial)+"\n";
+  }
+  if(principais){
+    F.medias.forEach(fm=>{
+      if(fm.reg){ t += textoRegressao(fm.reg, "efeito de "+fm.fator); return; }
+      t += "\nMédias de "+fm.fator+" ("+(fm.teste||r.testeNome||"")+" "+alfaTexto(alfa)
+         + (fm.dms!=null ? ", DMS "+fmt(fm.dms) : "")+"):\nNível\tMédia\tGrupo\n";
+      fm.linhas.forEach(x=>{ t += (x.nome||"?")+"\t"+fmt(mostra(x))+"\t"+(x.letra||"")+"\n"; });
+    });
+  }
+  if(desdobra){
+    const linhas = [], erros = [];
+    F.desd.forEach(d=>{
+      d.blocos.forEach(b=>linhas.push({nome:d.fator+" d. "+b.rot, gl:b.gl, sq:b.sq, qm:b.qm, f:b.f, p:b.p}));
+      if(!erros.some(x=>x.nome===d.erro.nome)) erros.push(d.erro);
+    });
+    erros.forEach(x=>linhas.push({nome:x.nome, gl:x.gl, qm:x.qm, sq: /Satterthwaite/.test(x.nome) ? null : x.qm*x.gl}));
+    t += "\nDesdobramento da interação:\n" + textoQuadro(linhas);
+    const D = F.desd;
+    if(D.length === 2 && !D[0].quant && !D[1].quant){
+      const A = D[0], B = D[1];
+      const nivA = A.blocos[0].niveis, nivB = B.blocos[0].niveis;
+      t += "\n"+A.fator+" \\ "+B.fator+"\t"+nivB.map(x=>x.nome).join("\t")+"\n";
+      nivA.forEach(ai=>{
+        t += ai.nome + "\t" + nivB.map(bj=>{
+          const cel = (A.blocos.find(b=>b.ids[0]===bj.id)||{niveis:[]}).niveis.find(x=>x.id===ai.id);
+          const up = (B.blocos.find(b=>b.ids[0]===ai.id)||{niveis:[]}).niveis.find(x=>x.id===bj.id);
+          return cel ? fmt(mostra(cel))+" "+(cel.letra||"")+((up&&up.letra)||"").toUpperCase() : "—";
+        }).join("\t") + "\n";
+      });
+      t += "Médias seguidas pela mesma letra minúscula na coluna ("+A.fator+") e maiúscula na linha ("
+         + B.fator+") não diferem entre si pelo teste de "+(A.blocos[0].teste||"")+" a "+alfaTexto(alfa)+".\n";
+    } else {
+      D.forEach(d=>{
+        if(d.quant){ d.blocos.forEach(b=>{ t += textoRegressao(b.reg, d.fator+" dentro de "+b.rot); }); return; }
+        t += "\n"+d.fator+" dentro de "+d.dentroDe+" ("+(d.blocos[0].teste||"")+" "+alfaTexto(alfa)+")\n";
+        d.blocos.forEach(b=>{
+          t += b.rot+"\t"+b.niveis.map(x=>x.nome+": "+fmt(mostra(x))+" "+(x.letra||"")).join("\t")+"\n";
+        });
+      });
+    }
+  }
+  return t;
+}
+
 async function exportar(e){
   let txt = "RELATÓRIO DE ENSAIO — "+e.nome+"\n";
   txt += "=".repeat(60)+"\n\n";
@@ -5208,41 +5924,38 @@ async function exportar(e){
       const m = vals.length? vals.reduce((a,b)=>a+b,0)/vals.length : null;
       txt += t.num+". "+t.nome+"\t"+matriz[ti].map(v=>v==null?"":fmt(v)).join("\t")+"\t"+fmt(m)+"\n";
     });
-    const r = anova(matriz, e.tratamentos.length, e.nRep, e.delineamento, ehFatorial(e), e.tratamentos, e.teste, croquiDe(e,av), alfaDe(e), e.controle);
+    const r = analisarAv(e, av);
     if(r.ok){
-      txt += "\nQuadro da análise de variância:\nFV\tGL\tSQ\tQM\tF\tp-valor\n";
-      r.fonte.forEach(f=>{
-        txt += f.nome+"\t"+f.gl+"\t"+fmt(f.sq,4)+"\t"+(f.qm!=null?fmt(f.qm,4):"")+"\t"
-             + (f.f!=null?fmt(f.f,3):"")+"\t"+(f.p!=null?fmt(f.p,4):"")+"\n";
-      });
-      const nomeTeste = (TESTES[r.teste]||TESTES.tukey).nome;
+      const nomeTeste = r.testeNome || (TESTES[r.teste]||TESTES.tukey).nome;
+      if(r.transf) txt += "\nTransformação para a análise: "+TRANSF[r.transf].nome
+        + " (médias apresentadas na escala original)\n";
+      txt += "\nQuadro da análise de variância:\n" + textoQuadro(r.fonte);
       txt += "\nCV (%): "+fmt(r.cv,2)
            + (r.cvA!=null ? " (parcela: "+fmt(r.cvA,2)+")" : "")
-           + "\nMédia geral: "+fmt(r.media)+"\n"
-           + (r.dms!=null ? "DMS "+nomeTeste+" 5%: "+fmt(r.dms)+"\n" : "")
+           + "\nMédia geral: "+fmt(r.transf ? r.mediaO : r.media)+"\n"
+           + (r.dms!=null ? "DMS "+nomeTeste+" "+alfaTexto(r.alfa)+(r.transf?" (escala transformada)":"")+": "+fmt(r.dms)+"\n" : "")
            + (r.critNome ? r.critNome+": "+fmt(r.critValor,3)+"\n" : "");
-      if(r.fatorial){
-        const inter = r.fatorial.pInt!=null && r.fatorial.pInt<0.05;
-        txt += "\nInteração "+(inter?"SIGNIFICATIVA":"não significativa")
-             + " — "+(inter ? "interpretar as combinações, não as médias isoladas de cada fator."
-                            : "os fatores podem ser interpretados separadamente.")+"\n";
-        r.fatorial.medias.forEach(fm=>{
-          txt += "\nMédias de "+fm.fator+" ("+nomeTeste+" "+alfaTexto(r.alfa)
-               + (fm.dms!=null ? ", DMS "+fmt(fm.dms) : "")+"):\nNível\tMédia\tGrupo\n";
-          fm.linhas.forEach(x=>{ txt += (x.nome||"?")+"\t"+fmt(x.media)+"\t"+(x.letra||"")+"\n"; });
-        });
+      const p = r.pressupostos || {};
+      if(p.normal || p.homog){
+        txt += "Pressupostos: "
+          + (p.normal ? "normalidade dos resíduos (Shapiro-Wilk) W = "+fmt(p.normal.W,4)+", p = "+fmt(p.normal.p,4) : "")
+          + (p.normal && p.homog ? "; " : "")
+          + (p.homog ? "homogeneidade das variâncias (Bartlett) χ² = "+fmt(p.homog.chi,3)+", p = "+fmt(p.homog.p,4) : "")
+          + "\n";
       }
+      if(r.fatorial) txt += textoFatorial(e, r);
       if(r.dunnett){
         const c = e.tratamentos[r.dunnett.iCtrl];
+        const mC = mostra(r.dunnett.linhas.find(x=>x.i===r.dunnett.iCtrl));
         txt += "\nTeste de Dunnett ("+alfaTexto(r.alfa)+") — testemunha: "+c.num+". "+c.nome+"\n"
              + "Tratamento\tMédia\tDif. p/ testemunha\tDunnett\n";
         const ordD = TELA.ordem === "media"
           ? r.dunnett.linhas.slice().sort((a,b)=>b.media-a.media)
           : r.dunnett.linhas.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
         ordD.forEach(x=>{
-          const t = e.tratamentos[x.i], ctrl = x.i===r.dunnett.iCtrl;
-          txt += t.num+". "+t.nome+"\t"+fmt(x.media)+"\t"
-               + (ctrl ? "—" : (x.dif>0?"+":"")+fmt(x.dif))+"\t"
+          const t = e.tratamentos[x.i], ctrl = x.i===r.dunnett.iCtrl, dif = mostra(x) - mC;
+          txt += t.num+". "+t.nome+"\t"+fmt(mostra(x))+"\t"
+               + (ctrl ? "—" : (dif>0?"+":"")+fmt(dif))+"\t"
                + (ctrl ? "(testemunha)" : (x.difere?"*":"ns"))+"\n";
         });
         txt += "\n* difere da testemunha · ns não difere. Dunnett não compara os "
@@ -5255,10 +5968,12 @@ async function exportar(e){
         ? r.medias.slice().sort((a,b)=>b.media-a.media)
         : r.medias.slice().sort((a,b)=>e.tratamentos[a.i].num - e.tratamentos[b.i].num);
       ordExp.forEach(m=>{
-        txt += e.tratamentos[m.i].num+". "+e.tratamentos[m.i].nome+"\t"+fmt(m.media)+"\t"+m.letra+"\n";
+        txt += e.tratamentos[m.i].num+". "+e.tratamentos[m.i].nome+"\t"+fmt(mostra(m))+"\t"+m.letra+"\n";
       });
       txt += "\nMédias seguidas da mesma letra não diferem entre si pelo teste de "
            + nomeTeste+" a "+alfaTexto(r.alfa)+".\n";
+    } else if(r.erro === "transf"){
+      txt += "\n[análise não realizada: a transformação "+TRANSF[r.transf].nome+" não se aplica a estes dados]\n";
     } else {
       txt += "\n[análise não realizada: malha de dados incompleta]\n";
     }
@@ -5411,9 +6126,8 @@ document.addEventListener("click", async ev=>{
     if(!Array.isArray(dest.relatorios)) dest.relatorios = [];
     dest.relatorios.push(r);
     // os dois ensaios mudaram: os dois precisam de carimbo novo para a sincronização
-    dest.atualizado = new Date().toISOString();
     if(!e.relatorios.length) TELA.editarPdf = null;
-    marcarSujo(); render(); toast("Movido para "+dest.nome);
+    marcarSujo(dest); render(); toast("Movido para "+dest.nome);
   }
   else if(a==="pegar-gps"){
     const inp = document.getElementById("in-coord");
@@ -5498,25 +6212,26 @@ document.addEventListener("click", async ev=>{
     const t = document.getElementById("txt-export");
     if(t){ t.focus(); t.select(); t.setSelectionRange(0, t.value.length); }
   }
-  else if(a==="fechar-foto"){ const lb=el.closest(".lightbox"); if(lb) lb.remove(); }
+  else if(a==="fechar-foto"){ fecharFoto(); }
   else if(a==="del-exp"){
-    if(await confirmar("Excluir \""+e.nome+"\" e tudo que está dentro dele? Isso não tem volta"
+    if(await confirmar("Excluir <b>"+esc(e.nome)+"</b> e tudo que está dentro dele? Isso não tem volta"
       + (syncPronto() ? " — e o ensaio sai também dos outros aparelhos." : "."))){
       const idExcluido = e.id;
       apagarBytesFotos((e.fotos||[]).map(f=>f.id));
       apagarPdfs((e.relatorios||[]).map(r=>r.id));
+      // os arquivos no servidor saem junto — senão ocupariam o espaço do plano para sempre
+      (e.fotos||[]).forEach(f=>{ if(f.remota) enfileirarExclusaoFoto(idExcluido, f.id); });
       (e.relatorios||[]).forEach(r=>{ if(r.remota) enfileirarExclusaoPdf(r.id); });
+      /* Marca a exclusão no servidor em vez de apagar a linha: sem esse rastro, o
+         próximo aparelho a sincronizar traria o ensaio de volta como novidade.
+         Vai por fila, e não na hora: excluído sem sinal, o aviso sai na próxima
+         sincronização — antes ele se perdia e o ensaio ressuscitava. */
+      if(syncConfig()){
+        if(!Array.isArray(ST.lapides)) ST.lapides = [];
+        ST.lapides.push({id:idExcluido, quando:new Date().toISOString()});
+      }
       ST.experimentos = ST.experimentos.filter(x=>x.id!==idExcluido);
       marcarSujo(); fecharModal(); TELA={nome:"home",expId:null,aba:"protocolo",avId:null}; render();
-      /* Marca a exclusão no servidor em vez de apagar a linha: sem esse rastro, o
-         próximo aparelho a sincronizar traria o ensaio de volta como novidade. */
-      if(syncPronto() && navigator.onLine){
-        supa("/rest/v1/experimentos", {
-          method:"POST", headers:{Prefer:"resolution=merge-duplicates,return=minimal"},
-          body: JSON.stringify([{id:idExcluido, dados:{}, removido:true,
-                                 atualizado:new Date().toISOString()}])
-        }).catch(()=>{ SYNC.erro = "A exclusão ainda não chegou à equipe"; atualizarStatus(); });
-      }
     }
   }
   else if(a==="add-trat"){
@@ -5538,7 +6253,7 @@ document.addEventListener("click", async ev=>{
          pessoa a confirmar no automático, e aí a pergunta deixa de proteger. */
       const temConteudo = p && (p.nome || p.dose || p.unidade);
       if(temConteudo && !await confirmar(
-          "Excluir o produto “"+(p.nome||"sem nome")+"” do tratamento "+(t.num||"")+"?")) return;
+          "Excluir o produto “"+esc(p.nome||"sem nome")+"” do tratamento "+(t.num||"")+"?")) return;
       t.produtos = t.produtos.filter(p=>p.id!==el.dataset.prod);
       if(!t.produtos.length) t.produtos.push({id:uid(), nome:"", dose:"", unidade:"", aplicacao:""});
       marcarSujo(); render();
@@ -5569,7 +6284,7 @@ document.addEventListener("click", async ev=>{
          pergunta diz de quantos tratamentos ele sai, e não só "tem certeza?". */
       const usos = e.tratamentos.filter(t=>t.niveis && t.niveis[id]===nv).length;
       if((nivel && nivel.nome || usos) && !await confirmar(
-          "Excluir o nível “"+((nivel&&nivel.nome)||"sem nome")+"” de "+esc(f.nome)+"?"
+          "Excluir o nível “"+esc((nivel&&nivel.nome)||"sem nome")+"” de "+esc(f.nome)+"?"
           + (usos ? " Ele sai de "+usos+" tratamento(s)." : ""))) return;
       f.niveis = f.niveis.filter(n=>n.id!==nv);
       e.tratamentos.forEach(t=>{ if(t.niveis[id]===nv) delete t.niveis[id]; });
@@ -5581,9 +6296,13 @@ document.addEventListener("click", async ev=>{
     const combos = f.reduce((a,x)=>a*x.niveis.length, 1);
     const comTest = el.dataset.com === "1";
     const total = combos + (comTest ? 1 : 0);
+    // foto guarda o tratamento pela identidade: com tratamentos novos, as antigas viram "extras"
+    const nFotosTrat = e.fotos.filter(x=>x.tratId).length;
     if(!await confirmar("Substituir os "+e.tratamentos.length+" tratamentos atuais pelas "+combos
       + " combinações dos fatores"+(comTest?" mais a testemunha":"")
-      + "? Os dados já lançados nas avaliações são apagados.")) return;
+      + "? Os dados já lançados nas avaliações são apagados."
+      + (nFotosTrat ? " As <b>"+nFotosTrat+"</b> fotos já tiradas continuam, mas passam para "
+                      + "<b>Fotos extras</b> de cada quadro." : ""))) return;
     let lista = [{}];
     f.forEach(x=>{
       const nova = [];
@@ -5667,9 +6386,10 @@ document.addEventListener("click", async ev=>{
       + (n ? " Os "+n+" ensaios dele <b>não</b> são apagados — ficam sem grupo." : ""),
       "Apagar grupo")) return;
     ST.grupos = ST.grupos.filter(x=>x.id!==id);
-    ST.experimentos.forEach(x=>{ if(x.grupoId===id) x.grupoId=""; });
+    const soltos = ST.experimentos.filter(x=>x.grupoId===id);
+    soltos.forEach(x=>{ x.grupoId=""; });
     if(TELA.grupo===id) TELA.grupo="";
-    marcarGerais(); render();
+    marcarGerais(); marcarSujo(...soltos); render();
   }
   else if(a==="limpar-busca"){ TELA.busca=""; render(); }
   else if(a==="set-esquema"){
@@ -5782,9 +6502,28 @@ document.addEventListener("click", async ev=>{
     marcarSujo(); render();
   }
   else if(a==="del-trat"){
-    if(!await confirmar("Remover este tratamento? Os dados lançados para ele em todas as avaliações também saem.")) return;
+    const saiu = e.tratamentos.find(t=>t.id===id); if(!saiu) return;
+    if(!await confirmar("Remover o tratamento <b>"+esc(saiu.nome||("T"+saiu.num))+"</b>? Os dados lançados para ele "
+      + "em todas as avaliações também saem.")) return;
+    const numSaiu = saiu.num;
     e.tratamentos = e.tratamentos.filter(t=>t.id!==id);
-    e.tratamentos.forEach((t,i)=>t.num=i+1);
+    /* Os seguintes sobem um número. O croqui guarda NÚMEROS, então acompanha:
+       até a v19 o mapa passava a apontar para os tratamentos errados, sem aviso.
+       A parcela do tratamento que saiu fica vazia no mapa. Nome no padrão "T4"
+       acompanha o número; nome escrito por alguém não é tocado. */
+    e.tratamentos.forEach((t,i)=>{
+      const novo = i+1;
+      if(t.num !== novo && t.nome === "T"+t.num) t.nome = "T"+novo;
+      t.num = novo;
+    });
+    if(e.croqui){
+      Object.keys(e.croqui).forEach(k=>{
+        const v = Number(e.croqui[k]);
+        if(!Number.isFinite(v)) return;
+        if(v === numSaiu) delete e.croqui[k];
+        else if(v > numSaiu) e.croqui[k] = String(v-1);
+      });
+    }
     e.avaliacoes.forEach(av=>{ Object.keys(av.dados).forEach(k=>{ if(k.indexOf(id+"|")===0) delete av.dados[k]; }); });
     marcarSujo(); render();
   }
@@ -5792,7 +6531,7 @@ document.addEventListener("click", async ev=>{
   else if(a==="sel-av"){ TELA.avId=id; render(); }
   else if(a==="del-av"){
     const av = e.avaliacoes.find(x=>x.id===id);
-    if(!await confirmar("Excluir a avaliação \""+av.nome+"\" e seus dados?")) return;
+    if(!av || !await confirmar("Excluir a avaliação <b>"+esc(av.nome||"sem nome")+"</b> e seus dados?")) return;
     e.avaliacoes = e.avaliacoes.filter(x=>x.id!==id); TELA.avId=null; marcarSujo(); render();
   }
   else if(a==="novo-quadro"){
@@ -5815,6 +6554,8 @@ document.addEventListener("click", async ev=>{
            : " Ele está vazio."), "Excluir quadro")) return;
     e.sessoesFoto = e.sessoesFoto.filter(x=>x.id!==id);
     apagarBytesFotos(e.fotos.filter(f=>f.sessaoId===id).map(f=>f.id));
+    // como na exclusão de uma foto: a do servidor sai também, na próxima sincronização
+    e.fotos.forEach(f=>{ if(f.sessaoId===id && f.remota) enfileirarExclusaoFoto(e.id, f.id); });
     e.fotos = e.fotos.filter(f=>f.sessaoId!==id);
     if(TELA.quadro===id) TELA.quadro = null;
     marcarSujo(); render();
@@ -5861,6 +6602,24 @@ document.addEventListener("click", async ev=>{
   else if(a==="exportar"){ exportar(e); }
   else if(a==="exportar-planilha"){ modalPlanilha(e); }
   else if(a==="copiar-final"){ copiarTabelaFinal(e); }
+  else if(a==="recomendar-transf"){
+    // o "Recomendar" do SASM-Agri: Box-Cox sobre os dados ORIGINAIS da avaliação
+    const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
+    const m = matrizDe(e, av);
+    if(m.some(l=>l.some(v=>v==null))){ toast("Complete a malha antes de pedir a recomendação"); return; }
+    const rec = recomendarTransf(m, e.delineamento, croquiDe(e, av), av.unidade);
+    if(!rec){ toast("Não deu para calcular com esses dados"); return; }
+    const atual = TRANSF[av.transf] ? (av.transf||"") : "";
+    TELA.recomTransf = {av: av.id, txt: rec.porque + (rec.chave === atual ? " É a que já está em uso." : ""),
+                        chave: rec.chave !== atual ? rec.chave : null};
+    render();
+  }
+  else if(a==="aplicar-transf"){
+    const av = e.avaliacoes.find(x=>x.id===id); if(!av) return;
+    av.transf = TRANSF[el.dataset.chave] ? el.dataset.chave : "";
+    TELA.recomTransf = null; marcarSujo(); render();
+    toast("Transformação: "+TRANSF[av.transf].nome);
+  }
   else if(a==="liberar"){
     if(!await confirmar("Descartar a versão ampliada das fotos? As miniaturas, as etiquetas e os links "
       + "do arquivo original continuam. Isso não tem volta.")) return;
@@ -5888,6 +6647,24 @@ document.addEventListener("change", ev=>{
     e.controle = Number(el.value); marcarSujo(); render(); return;
   }
   if(el.dataset.acao==="set-ordem"){ TELA.ordem = el.value; render(); return; }
+  if(el.dataset.acao==="set-desdobrar"){
+    const e = exp(); if(!e) return;
+    e.fatOpc = Object.assign({}, e.fatOpc||{}, {desdobrar: el.value});
+    marcarSujo(); render(); return;
+  }
+  if(el.dataset.acao==="set-tipo-fator"){
+    const e = exp(); if(!e) return;
+    const o = Object.assign({}, e.fatOpc||{}); o.tipos = Object.assign({}, o.tipos||{});
+    o.tipos[el.dataset.id] = el.value === "quant" ? "quant" : "qual";
+    e.fatOpc = o; marcarSujo(); render(); return;
+  }
+  if(el.dataset.acao==="set-transf"){
+    const e = exp(); if(!e) return;
+    const av = e.avaliacoes.find(x=>x.id===el.dataset.av); if(!av) return;
+    av.transf = TRANSF[el.value] ? el.value : "";
+    TELA.recomTransf = null;
+    marcarSujo(); render(); return;
+  }
   if(el.dataset.acao==="set-coluna"){
     const e = exp(); if(!e) return;
     const av = e.avaliacoes.find(x=>x.id===el.dataset.av); if(!av) return;
@@ -5900,7 +6677,7 @@ document.addEventListener("change", ev=>{
     if(ex){
       ex.grupoId = el.value;
       const g = ST.grupos.find(x=>x.id===el.value);
-      marcarSujo(); render();
+      marcarSujo(ex); render();                   // trocado no cartão: carimba este ensaio
       toast(g ? "Movido para "+g.nome : "Removido do grupo");
     }
     return;
@@ -6026,6 +6803,8 @@ document.addEventListener("input", ev=>{
     const av = e.avaliacoes.find(x=>x.id===p[1]); if(!av) return;
     const k = campo.slice(("dado."+p[1]+".").length);
     if(el.value==="") delete av.dados[k]; else av.dados[k] = el.value;
+    el.classList.toggle("invalido", el.value.trim()!=="" && num(el.value)==null);
+    el.title = el.classList.contains("invalido") ? "Não é um número" : "";
     const tr = el.closest("tr");                       // média da linha, sem redesenhar a malha
     if(tr){
       const vals = [...tr.querySelectorAll("input")].map(i=>num(i.value)).filter(v=>v!=null);
@@ -6047,7 +6826,7 @@ document.addEventListener("input", ev=>{
 
 // navegação por teclado na malha de dados
 document.addEventListener("keydown", ev=>{
-  if(ev.key==="Escape"){ fecharModal(); const lb=document.querySelector(".lightbox"); if(lb) lb.remove(); return; }
+  if(ev.key==="Escape"){ fecharModal(); fecharFoto(); return; }
   // o cartão do ensaio é uma div com role=button: Enter/Espaço precisam abri-lo
   if((ev.key==="Enter" || ev.key===" ") && ev.target.classList
      && (ev.target.classList.contains("exp-abrir") || ev.target.classList.contains("trat-abrir"))){
